@@ -1,0 +1,76 @@
+:root {
+  /* 底色 */
+  --c-bg: #F2F5F9;            /* 页面底 */
+  --c-surface: #FFFFFF;       /* 卡片 */
+  --c-surface-alt: #F8FAFC;   /* 日志/次级底 */
+  --c-row-alt: #F7FAFE;       /* 表格隔行 */
+  --c-head: #E8EEF6;          /* 表头底 */
+  --c-border: #D9E2EC;        /* 卡片与控件描边 */
+  --c-border-strong: #BCCCDC; /* 强化描边 */
+
+  /* 文字 */
+  --c-ink: #192D4B;           /* 主标题/表头字 */
+  --c-ink-2: #5F6E82;         /* 次级说明字 */
+  --c-ink-3: #B7C7DC;         /* 深色画布上的字 */
+  --c-ink-muted: #829AB1;     /* 辅助灰字 */
+
+  /* 深色画布与科技底色 */
+  --c-canvas: #111C2C;        /* 俯视图/视频底 */
+  --c-canvas-deep: #0B1320;   /* 深层科技背景 */
+  --c-hero-end: #1B2B44;      /* 官网 Hero 渐变终点 */
+  --c-grid: #2A394E;
+  --c-axis: #566F8F;
+
+  /* 语义色 */
+  --c-teal: #44C9BE;          /* 雷达 class=0 目标 */
+  --c-teal-dark: #289E94;     /* 强调深青 */
+  --c-amber: #FABF5C;         /* 雷达 class!=0 目标 */
+  --c-ok: #167450;            /* 已连接/保存中 */
+  --c-danger: #AF2D2D;        /* 异常 */
+  --c-danger-soft: #FDECEC;   /* 异常浅底 */
+  --c-ok-soft: #E1F1EA;       /* 主操作按钮底 */
+  --c-warn-soft: #FFF6E5;
+  --c-warn-ink: #9C6514;
+  --c-info-soft: #E6F2FF;
+  --c-info-ink: #1E5A99;
+
+  /* 检测框分类色（视觉页） */
+  --c-cls-0: #44C9BE;  /* person 行人 = 绿框 */
+  --c-cls-1: #5AA9E6;  /* bicycle */
+  --c-cls-2: #5AA9E6;  /* car */
+  --c-cls-3: #5AA9E6;  /* motorcycle */
+  --c-cls-5: #5AA9E6;  /* bus */
+  --c-cls-7: #5AA9E6;  /* truck = 蓝框 */
+
+  /* 风险热图色带（暖色=高，仅表达相对强度） */
+  --heat-0: #1B2B44;
+  --heat-1: #2E5A7A;
+  --heat-2: #3E8E86;
+  --heat-3: #C9A24B;
+  --heat-4: #E8763B;
+
+  /* 尺寸与排版 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --fs-hero: 34px;
+  --fs-title: 20px;
+  --fs-h2: 16px;
+  --fs-body: 14px;
+  --fs-cap: 12px;
+  --fs-xs: 11px;
+  --font: "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", "Consolas", monospace;
+
+  /* 阴影与发光 */
+  --shadow-card: 0 1px 3px rgba(25, 45, 75, 0.08), 0 4px 12px rgba(25, 45, 75, 0.04);
+  --shadow-elevated: 0 10px 28px rgba(17, 28, 44, 0.16);
+  --glow-teal: 0 0 16px rgba(68, 201, 190, 0.35);
+  --focus-ring: 2px solid rgba(68, 201, 190, 0.5);
+}

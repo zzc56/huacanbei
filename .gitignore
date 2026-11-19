@@ -1,0 +1,24 @@
+node_modules/
+dist/
+*.tsbuildinfo
+__pycache__/
+.pytest_cache/
+.cache/
+.venv*/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+
+# Local devices, credentials, model weights and recording assets
+/sentinel/config/*
+!/sentinel/config/devices.example.json
+/sentinel/logs/
+/sentinel/models/
+/sentinel/数据保存/
+/sentinel/验证记录/
+/sentinel/sentinel-backend/media/
+/sentinel/web/public/mock/
+*.zip

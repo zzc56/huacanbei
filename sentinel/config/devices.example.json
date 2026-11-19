@@ -1,0 +1,15 @@
+{
+  "radar": {
+    "host": "192.0.2.10",
+    "port": 50000,
+    "localAddress": "192.0.2.20"
+  },
+  "camera": {
+    "enabled": false,
+    "rtspUrl": "rtsp://192.0.2.30/",
+    "localAddress": "192.0.2.20",
+    "pythonPath": "",
+    "modelPath": "models/yolov8n.pt",
+    "fps": 10
+  }
+}

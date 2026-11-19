@@ -1,0 +1,6 @@
+# Python 3.10 / 3.11 x64. Install the appropriate CPU/CUDA PyTorch build first.
+numpy==1.24.4
+opencv-python==4.9.0.80
+ultralytics==8.4.36
+torch==2.8.0
+torchvision==0.23.0
