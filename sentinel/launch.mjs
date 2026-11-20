@@ -6,8 +6,8 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {root,loadSettings} from './settings.mjs';
 
 const mode=process.argv[2]??'live',children=[];
-if(!['live','recording','--check'].includes(mode))throw Error('使用 live 或 recording 模式');
-const settings=mode==='recording'?null:loadSettings();
+if(!['live','recording','vehicle','--check'].includes(mode))throw Error('使用 live、recording 或 vehicle 模式');
+const settings=(mode==='live'||mode==='--check')?loadSettings():null;
 for(const file of ['web/dist/index.html','sentinel-backend/dist/src/main.js','sentinel-backend/node_modules/fastify/package.json'])
   if(!existsSync(join(root,file)))throw Error('迁移包缺少文件：'+file);
 if(settings?.config.camera.enabled&&!existsSync(settings.model))
@@ -49,8 +49,10 @@ if(mode==='--check'){
     await wait('http://127.0.0.1:3001/api/health',data=>data.source===mode);
     launch('web','scripts/serve-dist.mjs',mode+'-frontend');
     await wait('http://127.0.0.1:4173/real-data-version.json',()=>true);
-    console.log(`已启动${mode==='live'?'实时硬件':'历史实测回放'}：http://127.0.0.1:4173/\n保留此窗口，Ctrl+C 停止。`);
-    if(process.env.SENTINEL_NO_OPEN!=='1')spawn('cmd.exe',['/d','/s','/c','start "" "http://127.0.0.1:4173/"'],
+    const url='http://127.0.0.1:4173/'+(mode==='vehicle'?'#/vehicle':'');
+    const title={live:'实时硬件',recording:'历史实测回放',vehicle:'车路协同'}[mode];
+    console.log(`已启动${title}：${url}\n保留此窗口，Ctrl+C 停止。`);
+    if(process.env.SENTINEL_NO_OPEN!=='1')spawn('cmd.exe',['/d','/s','/c',`start "" "${url}"`],
       {windowsHide:true,stdio:'ignore'});
     setInterval(()=>{},60000);
   }catch(error){console.error(error.message);close();process.exitCode=1;}

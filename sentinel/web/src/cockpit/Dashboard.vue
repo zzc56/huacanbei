@@ -96,6 +96,7 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                 /><span>{{ tab.name }}</span
                 ><small>{{ tab.en }}</small>
               </button>
+              <button @click="$router.push({ name: 'vehicle', query: { from: 'cockpit' } })"><UiIcon name="layers" /><span>车路协同</span></button>
             </div>
             <div class="view-indicator">
               <i class="live-dot" /> {{ store.frame.source==='recording' ? '实测回放' : store.playing ? '实时感知' : '观测暂停' }}

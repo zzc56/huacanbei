@@ -1,5 +1,6 @@
 <template>
   <Dashboard v-if="route.path === '/'" />
+  <RouterView v-else-if="route.name === 'vehicle'" />
   <AppShell v-else>
     <RouterView />
   </AppShell>
