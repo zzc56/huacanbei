@@ -2,13 +2,15 @@ import { config } from '../config.js';
 import type { FrameData, Segment, Target } from '../contracts.js';
 
 export interface RiskGrid { width: number; height: number; resolution: number; xMin: number; yMin: number }
+type RiskParameters = { [K in keyof typeof config.risk]: number };
 export class RiskFieldEngine {
   private readonly grid: Float32Array;
-  constructor(private readonly gridConfig: RiskGrid = config.grid, private readonly kernel: 'directional' | 'circular' = 'directional') {
+  constructor(private readonly gridConfig: RiskGrid = config.grid, private readonly kernel: 'directional' | 'circular' = 'directional',
+    private readonly parameters: RiskParameters = config.risk) {
     this.grid = new Float32Array(gridConfig.width * gridConfig.height);
   }
   compute(targets: Target[]): { field: NonNullable<FrameData['riskField']>; contours: Segment[]; values: Float32Array } {
-    const g = this.gridConfig, p = config.risk;
+    const g = this.gridConfig, p = this.parameters;
     this.grid.fill(0);
     for (const target of targets) {
       const f = target.fusion;

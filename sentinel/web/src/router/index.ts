@@ -12,6 +12,7 @@ const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', name: 'home', component: HomePage },
+    { path: '/vehicle', name: 'vehicle', component: () => import('@/cockpit/VehiclePanel.vue') },
     { path: '/tech', name: 'tech', component: TechPage },
     { path: '/demo', name: 'demo', component: DemoPage },
     { path: '/data', name: 'data', component: DataPage },

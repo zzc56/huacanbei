@@ -9,14 +9,14 @@ import { mockFrame } from '../services/stream';
 use([LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
 const store = useSceneStore(),
   element = ref<HTMLDivElement | null>(null),
-  period = ref(600);
+  period = ref(store.frame.vehicle ? 10 : 600);
 let chart: ECharts | undefined,
   observer: ResizeObserver | undefined,
   last = -Infinity;
 const history = new Map<string, [number, number | null][]>();
 function record() {
   if(store.frame.timestamp < last){history.clear();last=-Infinity;}
-  if (store.frame.timestamp - last < 1000 && store.frame.timestamp >= last) return;
+  if (store.frame.timestamp - last < (store.frame.vehicle ? 100 : 1000) && store.frame.timestamp >= last) return;
   last = store.frame.timestamp;
   for(const [id,series] of history)if(!store.frame.targets.some(t=>t.id===id&&t.risk)&&series.at(-1)?.[1]!==null)series.push([last/1000,null]);
   for(const [id,series] of history) if(series.length && last/1000-series[series.length-1][0]>1800)history.delete(id);
@@ -63,6 +63,7 @@ function render() {
         color: '#3c6a88',
         fontSize: 11,
         formatter: (v: number) => {
+          if(period.value<60)return Math.round(v-end)+' s';
           const minutes = Math.round((v - end) / 60);
           return minutes === 0 ? '现在' : minutes + ' min';
         },
@@ -126,12 +127,12 @@ onUnmounted(() => {
       <h3>风险趋势</h3>
       <div class="periods">
         <button
-          v-for="p in [60, 600, 1800]"
+          v-for="p in store.frame.vehicle ? [10, 60, 600] : [60, 600, 1800]"
           :key="p"
           :class="{ active: period === p }"
           @click="period = p"
         >
-          {{ p / 60 }}m
+          {{ p<60 ? p+'s' : p/60+'m' }}
         </button>
       </div>
     </div>

@@ -17,6 +17,7 @@ export function registerStream(app: FastifyInstance, pipeline: PipelineService, 
     socket.send(text, error => { if (error) socket.terminate(); });
   };
   app.server.on('upgrade', (request, socket, head) => {
+    if (request.url === '/api/vehicle/drive') return;
     const origin = request.headers.origin;
     if (request.url !== '/stream' || clients.size >= 128 || (origin !== undefined && !allowedOrigins.has(origin))) { socket.destroy(); return; }
     server.handleUpgrade(request, socket, head, ws => server.emit('connection', ws, request));

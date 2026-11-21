@@ -70,26 +70,26 @@ const measurement=computed(()=>measurementStatus(store.selected));
         ><strong class="type-text">{{ type }}</strong>
       </div>
       <div>
-        <span>坐标 (X, Y)</span
+        <span>{{ store.frame.vehicle ? (store.selected?.fusion ? '车身' : '场地') : '' }}坐标 (X, Y)</span
         ><strong>{{
           store.selected?.fusion
-            ? store.selected.fusion.x.toFixed(1) + ', ' + store.selected.fusion.y.toFixed(1)
-            : '—'
+            ? store.selected.fusion.x.toFixed(store.frame.vehicle?2:1) + ', ' + store.selected.fusion.y.toFixed(store.frame.vehicle?2:1)
+            : store.selected?.groundObservation ? store.selected.groundObservation.xM.toFixed(2)+', '+store.selected.groundObservation.yM.toFixed(2) : '—'
         }}</strong>
       </div>
       <div>
         <span>目标距离</span
         ><strong
           >{{
-            store.selected?.fusion
-              ? Math.hypot(store.selected.fusion.x, store.selected.fusion.y).toFixed(1)
+            store.frame.vehicle && store.selected?.radar ? store.selected.radar.range.toFixed(2) : store.selected?.fusion
+              ? Math.hypot(store.selected.fusion.x, store.selected.fusion.y).toFixed(store.frame.vehicle?2:1)
               : '—'
           }}<small> m</small></strong
         >
       </div>
       <div>
-        <span>方位角</span><strong>{{ store.selected?.fusion?.azimuth.toFixed(1) ?? '—' }}°</strong
-        ><small>{{ !store.selected?.fusion ? measurement.position : store.frame.northCalibrated===false ? '传感器 +Y · 北向待标定' : '正北 0° · 顺时针' }}</small>
+        <span>方位角</span><strong>{{ (store.selected?.radar?.azimuth ?? store.selected?.fusion?.azimuth)?.toFixed(1) ?? '—' }}°</strong
+        ><small>{{ store.frame.vehicle ? '车头 0° · 向右为正' : !store.selected?.fusion ? measurement.position : store.frame.northCalibrated===false ? '传感器 +Y · 北向待标定' : '正北 0° · 顺时针' }}</small>
       </div>
       <div>
         <span>径向速度</span
@@ -117,7 +117,7 @@ const measurement=computed(()=>measurementStatus(store.selected));
       </div>
       <div>
         <span><UiIcon name="link" :size="18" />{{ store.frame.source==='recording' ? '自动关联' : '融合目标' }}</span
-        ><strong>{{ store.frame.targets.filter((t) => store.frame.source==='recording' ? t.autoAssociation : t.radar && t.camera).length }}</strong
+        ><strong>{{ store.frame.targets.filter((t) => store.frame.vehicle ? t.vehicleSource==='both' : store.frame.source==='recording' ? t.autoAssociation : t.radar && t.camera).length }}</strong
         ><small>{{ store.frame.source==='recording' ? '算法候选 · 待确认' : '雷达 + 视觉' }}</small>
       </div>
     </div>

@@ -1,0 +1,214 @@
+.vehicle-platform {
+  min-height: 100vh;
+  color: #102e49;
+  background: #cee6ed;
+  font: 14px/1.45 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+}
+.vehicle-stage {
+  position: relative;
+  width: 100%;
+  height: auto;
+  min-height: 100vh;
+  padding: clamp(14px, 2vw, 32px) max(16px, calc((100vw - 1580px) / 2)) 24px;
+  gap: 18px;
+}
+.vehicle-stage > * { position: relative; }
+.vehicle-platform button { border: 0; cursor: pointer; background: transparent; color: inherit; }
+.vehicle-platform button:focus-visible, .vehicle-platform a:focus-visible, .vehicle-platform input:focus-visible {
+  outline: 2px solid #008c9c; outline-offset: 3px;
+}
+.vehicle-header { height: auto; min-height: 82px; padding: 0 clamp(14px, 2vw, 30px); gap: 18px; }
+.vehicle-header :deep(.brand) { min-width: 0; }
+.vehicle-header :deep(.brand h1) { font-size: clamp(22px, 2.4vw, 34px); }
+.vehicle-header :deep(.brand p) { font-size: clamp(8px, 0.8vw, 11px); }
+.vehicle-tabs { height: 70px; gap: 6px; }
+.vehicle-tabs > button { padding: 0 16px; font-size: 16px; font-weight: 700; white-space: nowrap; }
+.back-link { color: #245d78; text-underline-offset: 3px; }
+.vehicle-layout {
+  display: grid;
+  grid-template-columns: minmax(205px, 0.95fr) minmax(0, 1.75fr) minmax(240px, 1fr);
+  grid-template-areas: 'sensors field rail' 'replay replay replay';
+  gap: 16px;
+}
+.vehicle-navigation, .vehicle-navigation nav, .view-actions { display:flex; align-items:center; gap:10px; }
+.vehicle-navigation { padding:0 14px; min-height:45px; justify-content:space-between; flex-wrap:wrap; }
+.vehicle-navigation nav { height:46px; gap:5px; }
+.vehicle-navigation nav button { display:inline-flex; align-items:center; gap:6px; height:100%; padding:0 12px; font-weight:700; font-size:14px; }
+.view-actions { gap:5px; }
+.view-actions button { border:1px solid #9cc3cd; border-radius:5px; padding:4px 10px; }
+.view-actions [aria-pressed=true] { background:#d6efed; color:#075f63; border-color:#66aeb0; }
+.detail-action { color:#215773; font-weight:700; margin-right:7px; }
+.vehicle-camera { flex:1; min-height:115px; position:relative; display:flex; }
+.vehicle-camera :deep(.scene-viewport) { flex:1; box-shadow:none; }
+.vehicle-camera :deep(.scene-caption), .vehicle-camera :deep(.scene-bottom), .vehicle-camera :deep(.camera-location) { display:none; }
+.vehicle-camera :deep(.scene-tools) { inset:auto 5px 4px auto; padding:2px; font-size:10px; }
+.vehicle-camera :deep(.scene-tools span) { display:none; }
+.vehicle-camera .expand-camera { position:absolute; right:6px; top:6px; z-index:4; background:#ffffffe8; border-radius:4px; padding:4px; color:#1b687c; }
+.vehicle-platform :deep(.vehicle-photo) { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; z-index:1; background:#e7f0f3; }
+.vehicle-platform :deep(.view-camera .scene-tools), .vehicle-platform :deep(.view-camera .camera-location),
+.vehicle-platform :deep(.view-camera .scene-caption), .vehicle-platform :deep(.view-camera .view-notice) { z-index:3; }
+.vehicle-platform :deep(.view-camera .dialog-backdrop) { z-index:6; }
+.preview-source {position:absolute;z-index:3;top:6px;left:6px;padding:2px 5px;border-radius:3px;font-size:11px;color:#074456;background:#ecfaffed;}
+.vehicle-layout.detail-layout { display:flex; flex-direction:column; }
+.drive-keys {grid-template-columns:auto 1fr auto !important;}
+.drive-keys .key-groups,.key-groups > span {display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.drive-keys .key-groups {gap:clamp(12px,2vw,28px);color:#385f72}
+.drive-keys kbd {display:inline-grid;place-items:center;min-width:26px;height:26px;padding:0 5px;background:#f7fdff;border:1px solid #9cbfc9;border-bottom-width:3px;border-radius:5px;color:#174b64;font:bold 14px 'Segoe UI',sans-serif}
+.drive-keys kbd.pressed {color:white;background:#127a80;border-color:#075962}
+.drive-modes button:disabled {opacity:.65;cursor:default}
+.vehicle-camera.camera-expanded {position:fixed;inset:6vh 5vw;z-index:40;padding:12px;background:#e1eff1;border-radius:12px;box-shadow:0 0 0 150vmax #15383fd9}
+.drive-layout .vehicle-camera .preview-source {max-width:calc(100% - 46px)}
+.camera-offline {position:absolute;inset:1px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding-bottom:20px;background:linear-gradient(135deg,#eff7f9,#e0edef);border-radius:7px;color:#557880;font-size:13px;pointer-events:none}
+.vehicle-camera:has(.camera-offline) :deep(.scene-tools) {z-index:4}
+@media(max-width:700px){.drive-keys{grid-template-columns:1fr auto !important}.drive-keys .key-groups{grid-row:2;grid-column:1/-1}.vehicle-navigation .view-tabs{overflow-x:auto}.vehicle-navigation .view-tabs button{white-space:nowrap}}
+.vehicle-detail :deep(.monitor-layout) { grid-template-columns:clamp(240px,24vw,380px) minmax(0,1fr); margin:0; gap:12px; }
+.vehicle-detail :deep(.monitor-content) { grid-template-columns:minmax(0,1fr) clamp(180px,17vw,270px); }
+.vehicle-detail :deep(.monitor-main), .vehicle-detail :deep(.target-inspector) { padding:14px; min-width:0; }
+.vehicle-detail :deep(.scene-viewport) { min-height:400px; }
+.vehicle-detail :deep(.target-lock) { margin-top:7px; }
+.vehicle-detail :deep(.risk-hero) { padding:8px 0 10px; }
+.vehicle-detail :deep(.risk-number) { font-size:46px; }
+.vehicle-detail :deep(.target-properties) { height:auto; padding:6px 2px; }
+.vehicle-detail :deep(.target-properties > div) { padding:5px; }
+.vehicle-detail :deep(.target-properties strong) { font-size:16px; }
+.vehicle-detail :deep(.inspector-metrics) { margin:8px 0; }
+.vehicle-detail :deep(.inspector-metrics > div) { padding:5px; }
+.vehicle-detail :deep(.inspector-metrics strong) { font-size:20px; }
+.vehicle-detail :deep(.rail-context) { min-height:0; padding:12px; }
+.vehicle-detail :deep(.vehicle-strength-key) {margin:12px 0;color:#456b82;font-size:11px;}
+.vehicle-detail :deep(.vehicle-strength-key i) {height:7px;display:block;border-radius:4px;margin-bottom:3px;}
+.vehicle-detail :deep(.vehicle-strength-key span) {float:right;}
+.vehicle-detail :deep(.legend-item i) {display:none;}
+.vehicle-detail :deep(.risk-trend) { min-height:122px; }
+.vehicle-detail :deep(.trend-chart) { height:84px; min-height:84px; }
+.vehicle-detail :deep(.scene-tools) { max-width:95%; flex-wrap:wrap; }
+.vehicle-detail :deep(.section-heading h2),.vehicle-detail :deep(.section-heading h3) { font-size:17px; }
+.vehicle-header :deep(.brand) { flex:1; }
+.vehicle-header :deep(.global-metrics) { flex:1; min-width:0; }
+.vehicle-header :deep(.global-metrics > div) { min-width:0; }
+.vehicle-header :deep(.header-performance) { min-width:66px; }
+.vehicle-header :deep(.brand > svg) { flex-shrink:0; width:35px; }
+.vehicle-header :deep(.brand) { gap:9px; }
+.vehicle-header :deep(.global-metrics > div) {padding-inline:8px;margin:0;white-space:nowrap;}
+.vehicle-header :deep(.system-health) {width:auto;}
+.vehicle-header :deep(.system-health svg) {max-width:80px;}
+.vehicle-header :deep(.header-clock) {min-width:104px;}
+.vehicle-header :deep(.brand p) {font-size:9px;letter-spacing:1.6px;}
+.vehicle-stage {gap:12px;padding-top:14px;}
+.vehicle-header {min-height:72px;}
+@media(max-width:1200px){
+  .vehicle-header { gap:10px; }
+  .vehicle-header :deep(.brand h1) { font-size:24px; }
+  .vehicle-header :deep(.system-health svg) {display:none;}
+}
+@media(max-width:900px){
+  .vehicle-header :deep(.header-clock),.vehicle-header :deep(.header-performance) {display:none;}
+  .vehicle-detail :deep(.monitor-layout) { grid-template-columns:minmax(0,1fr); }
+  .vehicle-detail :deep(.monitor-main) { grid-row:1; }
+}
+@media(max-width:700px){
+  .vehicle-navigation nav { width:100%; justify-content:space-between; }
+  .vehicle-navigation nav button { padding:0 4px; }
+  .vehicle-navigation .view-actions { padding-bottom:7px; flex-wrap:wrap; }
+  .vehicle-header :deep(.global-metrics) { min-width:210px; }
+  .vehicle-detail :deep(.monitor-content) { grid-template-columns:minmax(0,1fr); }
+}
+.field-panel, .decision-panel, .observations, .replay-panel { padding: clamp(14px, 1.5vw, 23px); min-width: 0; }
+.field-panel { grid-area: field; display: flex; flex-direction: column; min-height: clamp(424px, 61vh, 660px); }
+.panel-top, .map-toolbar, .plot-legend, .risk-reading, .scrubber {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.panel-top { color: #288b98; }
+.section-heading h2 { font-size: clamp(18px, 1.55vw, 23px); line-height: 1.35; }
+.status, .corridor-key, .color-key, .transport, .stage-list button {
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.status { color: #156f72; font-size: 12px; font-weight: 650; white-space: nowrap; }
+.status.muted { color: #6d7582; }
+.status.muted .live-dot { background: #8a9aa6; box-shadow: none; }
+.map-toolbar { margin: 12px 0; color: #416783; font-size: 12px; flex-wrap: wrap; gap: 6px; }
+.map-options { display: flex; gap: 4px; }
+.map-options button { border: 1px solid #aacbd7; border-radius: 5px; padding: 3px 8px; color: #456b80; }
+.map-options button[aria-pressed=true] { background: #d5f0ee; border-color: #77b9b9; color: #0b605e; }
+.plot-legend { margin-top: 12px; color: #3a637c; font-size: 12px; }
+.corridor-key i { width: 19px; border-top: 2px dashed #348e98; }
+.color-key i { width: clamp(56px, 7vw, 110px); height: 6px; border-radius: 4px; }
+.color-key small { font: 11px 'Segoe UI', sans-serif; }
+.vehicle-sensors { grid-area: sensors; display: grid; grid-auto-rows: 1fr; gap: 16px; min-width: 0; }
+.vehicle-rail { grid-area: rail; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.decision-panel { flex: 1 0 auto; }
+.decision-band {
+  --action: #086c73; --tint: #d6f4ef;
+  display: flex; align-items: center; gap: 14px; margin: 15px 0 12px; padding: 12px 16px;
+  background: linear-gradient(100deg, var(--tint), #ffffff78); border-left: 3px solid var(--action);
+  color: var(--action); border-radius: 4px 10px 10px 4px;
+}
+.decision-band[data-action=slow] { --action: #865e13; --tint: #fbefce; }
+.decision-band[data-action=stop] { --action: #a54032; --tint: #ffe5db; }
+.action-symbol { display: grid; place-items: center; flex: 0 0 43px; height: 43px; border: 1px solid currentColor; border-radius: 12px; }
+.decision-band strong { font-size: clamp(24px, 2.3vw, 35px); font-weight: 850; line-height: 1.15; }
+.decision-band p { font-size: 12px; margin-top: 4px; }
+.metrics { display: grid; grid-template-columns: 1fr 1fr; padding: 8px 0; }
+.metrics div + div { padding-left: 16px; border-left: 1px solid #bbd8e3; }
+.metrics dt, .risk-reading span { color: #426a82; font-size: 13px; }
+.metrics dd, .risk-reading strong, .scrubber output {
+  color: #112f4d; font-family: 'DIN Alternate', 'Segoe UI', Arial, sans-serif; font-variant-numeric: tabular-nums;
+}
+.metrics dd { font-size: clamp(27px, 2.9vw, 43px); font-style: italic; font-weight: 750; line-height: 1.25; }
+.metrics small { color: #52758a; font-size: 12px; font-style: normal; font-weight: 500; }
+.risk-reading { margin-top: 9px; }
+.risk-reading strong { font-size: 17px; }
+.decision-panel .risk-scale { margin: 6px 0 2px; }
+.observations { flex: 1 1 auto; }
+.observations .panel-top { margin-bottom: 12px; }
+.total { background: #def2ee; color: #11736c; padding: 2px 7px; border-radius: 4px; font-size: 12px; font-weight: 650; }
+.target-scroll { max-height: 112px; overflow: auto; }
+.target-scroll table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+.target-scroll th, .target-scroll td { text-align: right; padding: 4px 2px; border-bottom: 1px solid #c5dfe7; }
+.target-scroll th { color: #51778b; font-weight: 500; }
+.target-scroll th:first-child, .target-scroll td:first-child { text-align: left; }
+.no-targets { min-height: 25px; padding: 5px 0; color: #52758a; font-size: 12px; }
+.replay-panel { grid-area: replay; display: grid; grid-template-columns: auto minmax(0,1fr); gap: clamp(20px, 3vw, 48px); align-items: center; }
+.replay-command { display: flex; align-items: center; gap: clamp(12px, 1.8vw, 28px); }
+.vehicle-platform .transport { border-radius: 7px; padding: 10px 15px; color: #fff; background: #146873; white-space: nowrap; font-weight: 650; }
+.vehicle-platform .transport:hover { background: #0b525f; }
+.transport .play { border: solid transparent; border-width: 5px 0 5px 8px; border-left-color: currentColor; }
+.transport .pause { width: 8px; height: 10px; border-inline: 3px solid currentColor; }
+.stage-list { display: flex; justify-content: space-between; gap: 4px; }
+.stage-list button { color: #426b80; font-size: 13px; padding: 4px 7px; border-radius: 5px; }
+.stage-list i { width: 7px; height: 7px; border: 1px solid #6a9ea9; border-radius: 50%; }
+.stage-list [aria-pressed=true] { background: #d4f2ef; color: #075d63; font-weight: 700; }
+.stage-list [aria-pressed=true] i { background: #008e8c; border-color: #008e8c; }
+.scrubber { margin-top: 7px; gap: 15px; }
+.scrubber input { width: 100%; min-width: 0; height: 16px; accent-color: #058989; cursor: pointer; }
+.scrubber output { white-space: nowrap; color: #3f6b81; font-size: 12px; }
+.connection { background: #fff0eb; padding: 8px 14px; border-left: 3px solid #b45a42; }
+.connection button { text-decoration: underline; color: #984932; }
+@media (max-width: 940px) {
+  .vehicle-stage { gap: 12px; }
+  .vehicle-layout { grid-template-columns: minmax(0, 1.45fr) minmax(240px, 1fr);
+    grid-template-areas: 'sensors sensors' 'field rail' 'replay replay'; gap: 12px; }
+  .vehicle-sensors { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+  .vehicle-rail { gap: 12px; }
+  .replay-command { align-items: flex-start; flex-direction: column; gap: 8px; }
+}
+@media (max-width: 700px) {
+  .vehicle-stage { padding: 10px 10px 18px; }
+  .vehicle-header { flex-wrap: wrap; gap: 4px 10px; padding: 10px 13px 0; }
+  .vehicle-header :deep(.brand) { flex-basis: 100%; gap: 11px; }
+  .vehicle-header :deep(.brand > svg) { width: 36px; height: 44px; }
+  .vehicle-tabs { height: 42px; }
+  .vehicle-tabs > button { font-size: 14px; padding-inline: 9px; }
+  .vehicle-tabs > button:after { bottom: 1px; }
+  .back-link { margin-left: auto; font-size: 12px; }
+  .vehicle-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'sensors' 'field' 'rail' 'replay'; }
+  .vehicle-sensors { gap: 8px; }
+  .field-panel { min-height: 370px; }
+  .replay-panel { grid-template-columns: minmax(0, 1fr); gap: 9px; }
+  .replay-command { flex-direction: row; align-items: center; justify-content: space-between; }
+  .stage-list { flex-wrap: wrap; justify-content: flex-start; }
+  .stage-list button { gap: 4px; padding: 5px; font-size: 12px; }
+}
+@media (max-width: 460px) {
+  .vehicle-sensors { grid-template-columns: minmax(0, 1fr); }
+}

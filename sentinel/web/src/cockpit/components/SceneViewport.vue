@@ -8,6 +8,7 @@ import { sampleField } from '../../core/RealDataAdapter';
 import { useVideoSource } from '../composables/useVideoSource';
 import { riskGrid, riskParams } from '../core/risk';
 import { contourPath } from '../core/contours';
+import { paintFieldCell } from '../core/fieldColors';
 import {
   paintMap,
   paintMeasuredMap,
@@ -22,7 +23,8 @@ import {
   type PlotBounds,
 } from '../renderers/lightScene';
 import UiIcon from './UiIcon.vue';
-const props = defineProps<{ mode: ViewMode; targets: Target[]; time: number; compact?: boolean; minimap?: boolean }>();
+const props = defineProps<{ mode: ViewMode; targets: Target[]; time: number; compact?: boolean; minimap?: boolean; drivePreview?:boolean }>();
+const emit = defineEmits<{ previewOpen:[] }>();
 const store = useSceneStore(),
   canvas = ref<HTMLCanvasElement | null>(null),
   video = ref<HTMLVideoElement | null>(null);
@@ -38,9 +40,19 @@ const {
   onVideoReady,
   getImage,
 } = useVideoSource(video);
-const recordedCamera = useRecordedCamera(video, computed(() => props.mode === 'camera'));
+const vehicle = computed(() => store.frame.vehicle);
+const externalPreview = computed(() => !!vehicle.value && store.videoSource.type !== 'mock');
+const recordedCamera = useRecordedCamera(video, computed(() => props.mode === 'camera' && !externalPreview.value));
 const measured = computed(() => store.connection !== 'mock');
-const captured = computed(() => store.frame.source==='recording'||store.frame.source==='live');
+const captured = computed(() => store.frame.source==='recording'||store.frame.source==='live'||!!vehicle.value && !externalPreview.value);
+const localFile=ref<HTMLInputElement|null>(null);
+function previewFile(e:Event) {
+  const input=e.currentTarget as HTMLInputElement, file=input.files?.[0];
+  if(!file)return;
+  if(!file.type.startsWith('video/')&&!file.type.startsWith('image/')){sourceError.value='请选择图片或视频';return;}
+  store.videoSource={type:file.type.startsWith('image/')?'photo':'video',url:URL.createObjectURL(file)};
+  input.value='';
+}
 const fillViewport = ref(true);
 const forwardRadar = computed(() => props.compact && fillViewport.value &&
   !store.frame.targets.some(t => t.radar && t.radar.range * Math.cos(t.radar.azimuth * Math.PI / 180) < -2));
@@ -77,15 +89,6 @@ let cacheKey = '',
   contribution = new Path2D();
 const levels = Array.from({ length: 28 }, (_, i) => (i + 1) * 0.03);
 const measuredLevels = [.01, .02, .05, .1, .2, .3, .4, .5, .6, .75, .85, .95];
-// 与浅色城市底图配合的高对比色带，只在高场值核心使用暖红。
-const fieldPalette = [
-  [0, 147, 190, 196, 35],
-  [0.2, 131, 198, 181, 85],
-  [0.4, 166, 210, 180, 115],
-  [0.58, 222, 211, 155, 140],
-  [0.75, 211, 160, 128, 170],
-  [1, 184, 96, 78, 195],
-];
 function prepareMeasuredField() {
   const f=store.frame.riskField;
   if(hover.value?.worldX!==undefined && hover.value.worldY!==undefined)hover.value.value=sampleField(f,hover.value.worldX,hover.value.worldY);
@@ -100,8 +103,7 @@ function prepareMeasuredField() {
     const src=row*f.width+col,dst=(f.height-1-row)*f.width+col;
     if(!f.valid[src]||!Number.isFinite(f.values[src]))continue;
     const v=f.values[src];values[dst]=v;
-    const stop=fieldPalette.findIndex(e=>e[0]>=v),b=fieldPalette[Math.max(1,stop)],a=fieldPalette[Math.max(0,stop-1)],t=(v-a[0])/(b[0]-a[0]);
-    im.data.set([1,2,3,4].map(k=>Math.round(a[k]+(b[k]-a[k])*t)),dst*4);
+    paintFieldCell(im.data, dst * 4, v, !!vehicle.value);
   }
   ctx.putImageData(im,0,0);paths=measuredLevels.map(v=>contourPath(values,f.width,f.height,v));
 }
@@ -133,11 +135,7 @@ onMounted(() => {
       const ctx = heat.getContext('2d')!,
         im = ctx.createImageData(128, 96);
       for (let i = 0; i < values.length; i++) {
-        const v = Math.max(0, Math.min(1, values[i]));
-        const stop = fieldPalette.findIndex((entry) => entry[0] >= v);
-        const b = fieldPalette[Math.max(1, stop)], a = fieldPalette[Math.max(0, stop - 1)];
-        const t = (v - a[0]) / (b[0] - a[0]);
-        im.data.set([1, 2, 3, 4].map((channel) => Math.round(a[channel] + (b[channel] - a[channel]) * t)), i * 4);
+        paintFieldCell(im.data, i * 4, values[i]);
       }
       ctx.putImageData(im, 0, 0);
     }
@@ -173,10 +171,11 @@ useCanvas(canvas, (ctx, w, h) => {
   if (props.mode === 'camera') {
     let box = { x: 0, y: 0, w, h };
     if(captured.value) {
-      const ready=recordedCamera.ready.value;
       const now=Date.now();
+      const decoded=recordedCamera.ready.value;
+      const ready=vehicle.value && store.playing && decoded && now-decoded.meta.timestamp>1500 ? null : decoded;
       if(now>=nextCameraTiming){
-        store.cameraLatencyMs=ready&&store.frame.source==='live'&&store.playing?Math.max(0,now-ready.meta.timestamp):null;
+        store.cameraLatencyMs=ready&&(store.frame.source==='live'||vehicle.value)&&store.playing?Math.max(0,now-ready.meta.timestamp):null;
         nextCameraTiming=now+250;
       }
       ctx.fillStyle='#e5eeee';ctx.fillRect(0,0,w,h);
@@ -188,8 +187,8 @@ useCanvas(canvas, (ctx, w, h) => {
         hits=cameraTargets(ctx,w,h,ready.targets,store.selectedId,false,box);
       }else{
         box=imageBox(store.frame.cameraFrame?.width??800,store.frame.cameraFrame?.height??448,w,h);
-        hits=cameraTargets(ctx,w,h,props.targets,store.selectedId,false,box);
-        text(ctx,store.frame.live?.camera.message??'当前时刻无可用录像帧 · 检测数据工程投影',w/2,h/2,'#466e82',15,'center');
+        hits=vehicle.value ? [] : cameraTargets(ctx,w,h,props.targets,store.selectedId,false,box);
+        text(ctx,vehicle.value ? (store.frame.cameraFrame ? '正在读取对应的图像帧' : vehicle.value.cameraMessage) : store.frame.live?.camera.message??'当前时刻无可用录像帧 · 检测数据工程投影',w/2,h/2,'#466e82',props.compact ? 12 : 15,'center');
       }
     } else if (store.videoSource.type !== 'mock') {
       ctx.fillStyle = '#e5eded';
@@ -206,7 +205,7 @@ useCanvas(canvas, (ctx, w, h) => {
         text(ctx, sourceError.value || '正在等待图像流…', w / 2, h / 2, '#708a8c', 16, 'center');
     }
     if(!captured.value) hits =
-      store.videoSource.type === 'mock' || videoReady.value
+      !externalPreview.value && (store.videoSource.type === 'mock' || videoReady.value)
         ? cameraTargets(
             ctx,
             w,
@@ -283,6 +282,7 @@ function inspect(event: MouseEvent) {
 </script>
 <template>
   <div class="scene-viewport" :class="'view-' + mode">
+    <img v-if="mode==='camera' && vehicle && store.videoSource.type==='photo'" class="vehicle-photo" :style="{objectFit:compact && fillViewport?'cover':'contain'}" :src="store.videoSource.url" alt="本地实拍照片预览" @error="sourceError='图片无法解码'" />
     <video
       v-if="mode === 'camera' && (store.frame.cameraFrame?.videoUrl || store.videoSource.type === 'video')"
       ref="video"
@@ -320,7 +320,7 @@ function inspect(event: MouseEvent) {
       <span
         ><i class="live-dot" />
         {{
-          mode === 'camera'
+          vehicle ? (mode==='camera' ? externalPreview ? '独立图像预览' : '固定摄像头 · 实拍画面' : mode==='radar' ? '车载雷达 · 车头 0°' : '车路协同 · 融合风险场') : mode === 'camera'
             ? store.frame.live ? store.frame.live.camera.state==='streaming' ? '实时摄像头 · LIVE RTSP / AI DETECTION' : '实时摄像头 · 等待网络视频' : measured ? '实测录像 · 原始像素检测' : '城市道路 · 高位视角'
             : mode === 'radar'
               ? store.frame.live ? '实物雷达 · LIVE TCP / TCR300' : measured ? '实测点迹 · SENSOR XY' : '全向探测 · LOCAL ENU'
@@ -339,12 +339,12 @@ function inspect(event: MouseEvent) {
     <div v-if="mode !== 'camera'" class="compass">
       <span>{{ store.frame.northCalibrated===false ? "+Y" : "N" }}</span
       ><svg viewBox="0 0 40 40"><path d="m20 5 9 28-9-6-9 6Z" fill="currentColor" /></svg
-      ><small>{{ store.frame.northCalibrated===false ? "传感器 0°" : "正北 0°" }}</small>
+      ><small>{{ vehicle ? '车头 0°' : store.frame.northCalibrated===false ? "传感器 0°" : "正北 0°" }}</small>
     </div>
     <div v-if="mode === 'camera'" class="camera-location">
-      <span>CAMERA 01</span><strong>{{ store.frame.live ? "网络摄像头 · 实时接入" : measured ? "实测录像 · 原始采集画面" : "中央大道交叉口" }}</strong
+      <span>CAMERA 01</span><strong>{{ vehicle ? externalPreview ? '外部图像预览' : '场边固定摄像头' : store.frame.live ? "网络摄像头 · 实时接入" : measured ? "实测录像 · 原始采集画面" : "中央大道交叉口" }}</strong
       ><small>{{
-        store.frame.live ? store.frame.live.camera.message : measured ? '采样录像自带标注 / 原始 BBox 叠加' : store.videoSource.type === 'mock' ? '模拟场景 / 视觉与雷达融合' : '外部图像 / 融合检测叠加'
+        vehicle ? externalPreview ? '独立预览 · 无同步检测' : vehicle.cameraMessage : store.frame.live ? store.frame.live.camera.message : measured ? '采样录像自带标注 / 原始 BBox 叠加' : store.videoSource.type === 'mock' ? '模拟场景 / 视觉与雷达融合' : '外部图像 / 融合检测叠加'
       }}</small>
     </div>
     <div class="scene-bottom">
@@ -353,15 +353,20 @@ function inspect(event: MouseEvent) {
           ? 'OBJECT DETECTION + SENSOR FUSION'
           : mode === 'radar'
             ? 'RANGE · AZIMUTH · VELOCITY'
-            : store.frame.live ? 'XY 等比例 · 圆形风险范围 / 未联合标定' : measured ? 'XY 等比例 · RECORDED FIELD / VALID MASK' : 'RISK DISTRIBUTION / DEMO MODEL'
+            : vehicle ? '车身 XY · 前向风险' : store.frame.live ? 'XY 等比例 · 圆形风险范围 / 未联合标定' : measured ? 'XY 等比例 · RECORDED FIELD / VALID MASK' : 'RISK DISTRIBUTION / DEMO MODEL'
       }}</span
-      ><span>{{ store.selectedId }}<i />{{ ((store.frame.replay?.positionMs ?? (store.frame.live ? store.frame.timestamp-store.frame.live.startedAt : store.frame.timestamp)) / 1000).toFixed(1) }} s</span>
+      ><span>{{ store.selectedId }}<i />{{ vehicle && !vehicle.demo ? new Date(store.frame.timestamp).toLocaleTimeString('zh-CN') : ((store.frame.replay?.positionMs ?? (store.frame.live ? store.frame.timestamp-store.frame.live.startedAt : store.frame.timestamp)) / 1000).toFixed(1)+' s' }}</span>
     </div>
     <div v-if="mode === 'camera' && compact" class="scene-tools">
+      <template v-if="drivePreview">
+        <input ref="localFile" type="file" accept="image/*,video/*" hidden @change="previewFile" />
+        <button @click="emit('previewOpen'); localFile?.click()">本地照片／录像</button>
+        <button v-if="externalPreview" @click="openSource('mock')">返回摄像头</button>
+      </template>
       <span v-if="fillViewport">等比裁切</span>
       <button @click="fillViewport = !fillViewport">{{ fillViewport ? '完整画面' : '铺满画面' }}</button>
     </div>
-    <div v-else-if="mode === 'camera' && !captured" class="scene-tools">
+    <div v-else-if="mode === 'camera' && (!captured || vehicle)" class="scene-tools">
       <span>图像源</span
       ><button
         v-for="t in ['mock', 'video', 'carla'] as const"
@@ -369,8 +374,12 @@ function inspect(event: MouseEvent) {
         @click="openSource(t)"
         :class="{ active: store.videoSource.type === t }"
       >
-        {{ t.toUpperCase() }}
+        {{ vehicle && t==='mock' ? '固定摄像头' : t.toUpperCase() }}
       </button>
+      <template v-if="vehicle">
+        <input ref="localFile" type="file" accept="image/*,video/*" hidden @change="previewFile" />
+        <button @click="localFile?.click()">本地照片 / 录像</button>
+      </template>
     </div>
     <div v-else-if="mode !== 'camera'" class="scene-tools">
       <button v-if="compact && mode === 'radar'" @click="fillViewport = !fillViewport">
@@ -391,7 +400,7 @@ function inspect(event: MouseEvent) {
         航迹
       </button>
     </div>
-    <div v-if="!compact && store.selected && mode === 'camera' && !store.selected.camera" class="view-notice">
+    <div v-if="!compact && !externalPreview && store.selected && mode === 'camera' && !store.selected.camera" class="view-notice">
       {{ store.selectedId }} 当前帧没有对应的视觉检测框
     </div>
     <div v-if="!compact && store.selected && mode === 'radar' && !store.selected.radar" class="view-notice">

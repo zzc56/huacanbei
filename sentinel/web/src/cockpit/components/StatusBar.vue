@@ -2,6 +2,9 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useSceneStore } from '../stores/scene';
 import AnimatedMetric from './AnimatedMetric.vue';
+import CockpitBrand from './CockpitBrand.vue';
+const props=defineProps<{vehicle?:boolean; driving?:boolean; statusText?:string; refreshHz?:number; requestMs?:number|null}>();
+const emit=defineEmits<{toggle:[]}>();
 const store = useSceneStore(),
   now = ref(new Date()),
   full = ref(false),
@@ -30,6 +33,10 @@ const status = computed(
 function syncFull() {
   full.value = !!document.fullscreenElement;
 }
+function togglePlayback() {
+  if(props.vehicle)emit('toggle');
+  else store.playing=!store.playing;
+}
 async function toggleFull() {
   try {
     if (document.fullscreenElement) await document.exitFullscreen();
@@ -52,9 +59,9 @@ function keyboard(event: KeyboardEvent) {
     document.querySelector('.source-dialog')
   )
     return;
-  if (event.code === 'Space') {
+  if (event.code === 'Space' && !props.driving) {
     event.preventDefault();
-    store.playing = !store.playing;
+    togglePlayback();
   }
   if (event.code === 'KeyF') void toggleFull();
 }
@@ -74,28 +81,10 @@ onUnmounted(() => {
 </script>
 <template>
   <header class="system-header glass-panel">
-    <div class="brand">
-      <svg viewBox="0 0 56 64" aria-hidden="true">
-        <defs>
-          <linearGradient id="brand-gradient" x1="0" y1="0" x2="1" y2="1">
-            <stop stop-color="#123a49" />
-            <stop offset=".5" stop-color="#008f9d" />
-            <stop offset="1" stop-color="#50dec9" />
-          </linearGradient>
-        </defs>
-        <path d="M28 3 47 16 52 36 39 55 28 61 10 47 4 28 15 10Z" fill="url(#brand-gradient)" />
-        <path d="m28 10 13 14-2 18-11 13-13-15 3-18Z" fill="#e7fbf7" />
-        <path d="m28 14 5 18-5 20-5-20Z" fill="#008e9b" />
-        <path d="M28 3v9M28 52v9" stroke="#e9ffff" stroke-width="1.5" />
-      </svg>
-      <div>
-        <h1>多模态融合监控中枢</h1>
-        <p>MULTI-MODAL FUSION MONITORING CENTER</p>
-      </div>
-    </div>
+    <CockpitBrand :title="vehicle?'车路协同监控平台':'多模态融合监控中枢'" :subtitle="vehicle?'SENTINEL / VEHICLE–ROAD COOPERATION':'MULTI-MODAL FUSION MONITORING CENTER'" />
     <div class="system-health">
       <span :class="{ offline: ['error', 'disconnected'].includes(store.connection) || store.frame.live && store.frame.live.radar.state!=='streaming' && store.frame.live.camera.state!=='streaming' }"
-        ><i class="live-dot" />{{ store.playing ? status : store.frame.source==='live' ? '显示已冻结 · 采集继续' : '回放已暂停' }}</span
+        ><i class="live-dot" />{{ vehicle ? statusText : store.playing ? status : store.frame.source==='live' ? '显示已冻结 · 采集继续' : '回放已暂停' }}</span
       ><svg viewBox="0 0 140 20">
         <path
           d="M0 12h25l5-7 7 12 9-15 6 10h14l5-4 5 4h64"
@@ -109,17 +98,17 @@ onUnmounted(() => {
       <strong>{{ clock }}</strong
       ><span>{{ date }} <i>UTC+8</i></span>
     </div>
-    <div class="header-performance">
+    <div v-if="!driving" class="header-performance">
       <span
-        >FPS <b>{{ store.fps || '—' }}</b></span
+        >{{ vehicle?'刷新':'FPS' }} <b>{{ vehicle ? (refreshHz??0)+' Hz' : store.fps || '—' }}</b></span
       ><span
-        >链路 <b>{{ store.frame.source === 'recording' ? '回放 10Hz' : store.connection === 'mock' ? 'LOCAL' : store.latency + 'ms' }}</b></span
+        >链路 <b>{{ vehicle ? (requestMs==null?'—':requestMs+'ms') : store.frame.source === 'recording' ? '回放 10Hz' : store.connection === 'mock' ? 'LOCAL' : store.latency + 'ms' }}</b></span
       >
     </div>
     <div class="global-metrics">
       <div>
-        <span>在线目标</span
-        ><strong><AnimatedMetric :value="store.frame.targets.length" :pad="2" /></strong>
+        <span>{{ vehicle?'融合目标':'在线目标' }}</span
+        ><strong><AnimatedMetric :value="vehicle ? (store.frame.riskField ? store.frame.targets.filter(t=>t.fusion).length : null) : store.frame.targets.length" :pad="2" /></strong>
       </div>
       <div>
         <span>平均风险</span><strong><AnimatedMetric :value="store.averageRisk" :digits="2" /></strong>
@@ -134,8 +123,8 @@ onUnmounted(() => {
     <div class="header-actions">
       <button
         class="icon-button"
-        @click="store.playing = !store.playing"
-        :aria-label="store.frame.source==='live' ? (store.playing ? '冻结实时显示' : '继续实时显示') : (store.playing ? '暂停回放' : '继续回放')"
+        v-if="!driving" @click="togglePlayback"
+        :aria-label="store.frame.source==='live'||vehicle&&!store.frame.vehicle?.demo ? (store.playing ? '冻结实时显示' : '继续实时显示') : (store.playing ? '暂停回放' : '继续回放')"
         :title="store.playing ? '暂停 · Space' : '继续 · Space'"
       >
         <svg v-if="store.playing" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" /></svg

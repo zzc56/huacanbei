@@ -3,6 +3,11 @@ import type { Target } from '../cockpit/types';
 /** Explain absent values without confusing detection confidence with association. */
 export function measurementStatus(target?: Target) {
   if(!target)return {source:'暂无观测',position:'暂无定位',velocity:'暂无速度',detail:'请选择一个当前目标'};
+  if(target.vehicleSource) return {
+    source: {camera:'摄像头定位',lidar:'车载雷达',both:'雷视融合'}[target.vehicleSource],
+    position:target.fusion?'车身坐标':target.groundObservation?'场地坐标':'车头相对方位',
+    velocity:'未提供目标速度',detail:'固定摄像头提供地面位置，雷达提供距离与方位。通过时间和空间匹配的观测用于融合。',
+  };
   if(target.autoAssociation){
     const a=target.autoAssociation,held=a.status==='held';
     return {source:held?'关联保持 · 待确认':'自动关联 · 待确认',position:'关联雷达定位',

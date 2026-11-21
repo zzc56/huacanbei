@@ -8,10 +8,16 @@ import SceneViewport from './components/SceneViewport.vue';
 import OverviewPanel from './components/OverviewPanel.vue';
 import UiIcon from './components/UiIcon.vue';
 import type { ViewMode } from './renderers/lightScene';
+import { vehicleFieldLegend } from './core/fieldColors';
 import './styles.css';
-const store = useSceneStore(),
-  { renderTargets, time } = useScene();
-const mode = ref<ViewMode | 'overview'>('overview'),
+const props = defineProps<{ vehicleView?: ViewMode }>();
+const store = useSceneStore();
+const { renderTargets, time } = props.vehicleView ? {
+  renderTargets: computed(()=>store.frame.targets),
+  time: computed(()=>store.frame.timestamp / 1000),
+} : useScene();
+const localMode = ref<ViewMode | 'overview'>('overview');
+const mode = computed({get:()=>props.vehicleView ?? localMode.value, set:value=>{localMode.value=value;}}),
   filter = ref('all'),
   scale = ref(1),
   offset = ref({ x: 0, y: 0 });
@@ -44,7 +50,7 @@ const targets = computed(() =>
     .filter((t) => {
       const v = t.risk?.value;
       if (mode.value === 'camera')
-        return !!t.camera && (filter.value === 'all' || t.camera.class === filter.value);
+        return (!!t.camera || !!t.groundObservation) && (filter.value === 'all' || (t.camera?.class ?? t.kind) === filter.value);
       if(mode.value === 'radar' && !t.radar || mode.value === 'risk' && !t.fusion)return false;
       return (
         filter.value === 'all' ||
@@ -65,23 +71,23 @@ function resize() {
   };
 }
 onMounted(() => {
+  if (props.vehicleView) return;
   resize();
   window.addEventListener('resize', resize);
 });
 onUnmounted(() => window.removeEventListener('resize', resize));
 </script>
 <template>
-  <main class="cockpit-viewport">
+  <div :class="vehicleView ? 'vehicle-detail' : 'cockpit-viewport'">
     <div
-      class="cockpit-stage"
-      :class="{ 'overview-stage': mode === 'overview' }"
-      :style="{ transform: `translate(${offset.x}px,${offset.y}px) scale(${scale})` }"
+      :class="[vehicleView ? 'vehicle-detail-stage' : 'cockpit-stage', { 'overview-stage': mode==='overview' }]"
+      :style="vehicleView ? undefined : { transform: `translate(${offset.x}px,${offset.y}px) scale(${scale})` }"
     >
-      <StatusBar />
+      <StatusBar v-if="!vehicleView" />
       <div class="monitor-layout" :class="{ 'overview-layout': mode === 'overview' }">
         <TargetInspector v-if="mode !== 'overview'" />
         <section class="monitor-main glass-panel">
-          <div class="monitor-toolbar">
+          <div v-if="!vehicleView" class="monitor-toolbar">
             <div class="view-tabs" role="tablist" aria-label="感知视图">
               <button
                 v-for="tab in tabs"
@@ -96,6 +102,7 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                 /><span>{{ tab.name }}</span
                 ><small>{{ tab.en }}</small>
               </button>
+              <button @click="$router.push({ name: 'vehicle', query: { from: 'cockpit' } })"><UiIcon name="layers" /><span>车路协同</span></button>
             </div>
             <div class="view-indicator">
               <i class="live-dot" /> {{ store.frame.source==='recording' ? '实测回放' : store.playing ? '实时感知' : '观测暂停' }}
@@ -116,6 +123,7 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                     <h3>风险等级</h3>
                     <UiIcon name="layers" :size="18" />
                   </div>
+                  <div v-if="vehicleView" class="vehicle-strength-key"><i :style="{background:vehicleFieldLegend}" />0 · 低场值 <span>1 · 高场值</span></div>
                   <div
                     class="legend-item"
                     v-for="item in [
@@ -129,7 +137,7 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                     <i :style="{ background: item.color }" /><b>{{ item.name }}</b
                     ><span>{{ item.range }}</span>
                   </div>
-                  <p class="context-note">{{ store.frame.live ? store.frame.live.fusion.message : store.frame.source==='recording' ? '保存的研究风险场 · 掩码外未知' : store.connection==='mock' ? '演示风险模型 · 公式可替换' : '后端风险场 · 未提供区域未知' }}</p></template
+                  <p class="context-note">{{ vehicleView ? '车身坐标 · 电脑端融合网格 · 指向热图读取场值' : store.frame.live ? store.frame.live.fusion.message : store.frame.source==='recording' ? '保存的研究风险场 · 掩码外未知' : store.connection==='mock' ? '演示风险模型 · 公式可替换' : '后端风险场 · 未提供区域未知' }}</p></template
                 >
                 <template v-else-if="mode === 'radar'"
                   ><div class="section-heading">
@@ -163,16 +171,16 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                     <span>当前视觉目标</span
                     ><strong
                       >{{
-                        String(store.frame.targets.filter((t) => t.camera).length).padStart(2, '0')
+                        String(store.frame.targets.filter((t) => t.camera || t.groundObservation).length).padStart(2, '0')
                       }}<small> OBJECTS</small></strong
                     >
                   </div>
                   <div class="sensor-details">
                     <span
-                      >观测源<b>{{ store.frame.live ? '网络摄像头 · '+(store.frame.live.camera.state==='streaming'?'实时':'待连接') : store.frame.source==='recording' ? '实测录像' : store.videoSource.type.toUpperCase() }}</b></span
-                    ><span
+                      >观测源<b>{{ vehicleView ? (store.videoSource.type!=='mock'?'外部预览':store.frame.cameraFrame?'固定摄像头实拍':store.frame.vehicle?.demo?'离线坐标':'等待实拍画面') : store.frame.live ? '网络摄像头 · '+(store.frame.live.camera.state==='streaming'?'实时':'待连接') : store.frame.source==='recording' ? '实测录像' : store.videoSource.type.toUpperCase() }}</b></span
+                        ><span
                       >{{ store.frame.source==='recording' ? '原始检测记录' : '融合目标' }}<b>{{
-                        store.frame.recordingCounts?.detections ?? store.frame.targets.filter((t) => t.camera && t.radar).length
+                        store.frame.recordingCounts?.detections ?? store.frame.targets.filter((t) => vehicleView ? t.vehicleSource==='both' : t.camera && t.radar).length
                       }}</b></span
                     ><span
                       >选中置信度<b>{{
@@ -238,9 +246,9 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                               : '低风险'
                         }}</small></b
                       ><span
-                        ><strong>{{ mode==='camera' && target.camera ? (target.camera.confidence*100).toFixed(1)+'%' : target.risk?.value.toFixed(2) ?? '—' }}</strong
+                        ><strong>{{ mode==='camera' ? (target.camera ? (target.camera.confidence*100).toFixed(1)+'%' : '仅地面位置') : target.risk?.value.toFixed(2) ?? '—' }}</strong
                         ><small>{{
-                          mode==='camera' ? target.camera?.class : target.autoAssociation ? '自动关联 · 待确认' : target.radar ? (target.camera ? '已融合' : '仅雷达') : '仅视觉'
+                          mode==='camera' ? (target.camera?.class ?? target.kind ?? '地面观测') : target.vehicleSource==='both' ? '已融合' : target.autoAssociation ? '自动关联 · 待确认' : target.radar ? (target.camera ? '已融合' : '仅雷达') : '仅视觉'
                         }}</small></span
                       ></span
                     ><UiIcon name="chevron" :size="15" />
@@ -256,7 +264,7 @@ onUnmounted(() => window.removeEventListener('resize', resize));
           </div>
         </section>
       </div>
-      <footer class="system-footer">
+      <footer v-if="!vehicleView" class="system-footer">
         <span><i class="live-dot" />感知 · 融合 · 风险评估</span
         ><span
           >{{ store.frame.northCalibrated===false ? '传感器局部 XY · 北向待现场标定' : '本地 ENU · 正北 0°' }} <i />
@@ -264,5 +272,5 @@ onUnmounted(() => window.removeEventListener('resize', resize));
         ><b>SENTINEL <em>/</em> MULTIMODAL INTELLIGENCE</b>
       </footer>
     </div>
-  </main>
+  </div>
 </template>

@@ -16,7 +16,7 @@ export function polarToXY(range: number, azimuth: number) {
   const angle = azimuth * Math.PI / 180;
   return { x: range * Math.sin(angle), y: range * Math.cos(angle) };
 }
-function position(x: number, y: number, vx?: number, vy?: number): NonNullable<Target['fusion']> {
+export function position(x: number, y: number, vx?: number, vy?: number): NonNullable<Target['fusion']> {
   if (vx !== undefined && vy !== undefined) return solveFusion(x, y, vx, vy);
   return { x, y, azimuth: degrees(Math.atan2(x, y)), vx: null, vy: null, speed: null, heading: null, radialVelocity: null, tangentialVelocity: null };
 }
@@ -97,7 +97,7 @@ export class RealDataAdapter {
     if(!Array.isArray(r.targets)||!Number.isFinite(numeric(r.timestamp)))return;
     return this.backend(r);
   }
-  private trails(frame: FrameData) {
+  trails(frame: FrameData) {
     if(frame.timestamp<this.last)this.history.clear(); this.last=frame.timestamp;
     for(const t of frame.targets) {
       if(!t.fusion)continue;

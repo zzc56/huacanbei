@@ -2,8 +2,7 @@
 
 性能设计（CPU 环境）：
 - 采集、检测、输出三段解耦。采集线程只保留最新帧；检测线程持续推理并保存
-  最近一次结果；主线程按目标帧率编码并输出视频，因此视频流畅度不再被推理
-  耗时拖慢，检测框按推理速度刷新。
+  最近一次结果及其原图。主线程编码同一次采集的画面和检测框。
 - 推理尺寸与线程数可通过环境变量调整：CAMERA_IMGSZ（默认 416）、
   CAMERA_CPU_THREADS（默认 4）。降低 imgsz 可进一步提高检测刷新率。
 """
@@ -24,8 +23,9 @@ import numpy as np
 
 cv2.setNumThreads(1)
 
-url = os.environ["CAMERA_RTSP_URL"]
-if not url.startswith(("rtsp://", "rtsps://")):
+url = os.environ.get("CAMERA_RTSP_URL", "")
+usb_index = os.environ.get("CAMERA_DEVICE_INDEX", "")
+if not usb_index.isdigit() and not url.startswith(("rtsp://", "rtsps://")):
     raise ValueError("CAMERA_RTSP_URL must be an RTSP address")
 fps = min(15, max(1, float(os.environ.get("CAMERA_FPS", "15"))))
 cpu_threads = min(8, max(1, int(os.environ.get("CAMERA_CPU_THREADS", "4"))))
@@ -37,7 +37,7 @@ lock = threading.Lock()
 stop = threading.Event()
 
 det_lock = threading.Lock()   # 检测线程写入、输出线程读取
-det_state = {"captured": 0.0, "detections": [], "active": False, "inference_ms": 0.0}
+det_state = {"captured": 0.0, "frame": None, "detections": [], "active": False, "inference_ms": 0.0}
 
 # 保存真实 stdout 句柄：contextlib.redirect_stdout 是全局替换 sys.stdout，
 # 检测线程推理时若主线程用 print 输出，JSON 会被重定向到 stderr 导致数据丢失。
@@ -57,8 +57,8 @@ def capture():
         # The environment fallback also supports older OpenCV builds.
         if hasattr(cv2, "CAP_PROP_N_THREADS"):
             params += [cv2.CAP_PROP_N_THREADS, 1]
-        video = cv2.VideoCapture(url, cv2.CAP_FFMPEG, params)
-        warm_until = time.monotonic() + 2  # Wait for a complete initial H.265 GOP.
+        video = cv2.VideoCapture(int(usb_index)) if usb_index.isdigit() else cv2.VideoCapture(url, cv2.CAP_FFMPEG, params)
+        warm_until = time.monotonic() + (0 if usb_index.isdigit() else 2)
         try:
             while video.isOpened() and not stop.is_set():
                 ok, frame = video.read()
@@ -165,6 +165,7 @@ def detect():
         # Keep one latest input; never replay an inference backlog.
         with det_lock:
             det_state["captured"] = captured
+            det_state["frame"] = frame
             det_state["detections"] = detections
             det_state["active"] = model is not None
             det_state["inference_ms"] = inference_ms
@@ -174,6 +175,7 @@ if model is not None:
     threading.Thread(target=detect, daemon=True).start()
 
 sequence = 0
+last_sent = 0.0
 try:
     while not stop.is_set():
         tick = time.monotonic()
@@ -185,20 +187,26 @@ try:
         captured, frame = item
         with det_lock:
             det_captured = det_state["captured"]
+            det_frame = det_state["frame"]
             detections = det_state["detections"]
             active = det_state["active"]
             inference_ms = det_state["inference_ms"]
-        # 检测框只在与当前帧足够接近时附加，避免画面和框错位过大。
-        fresh = detections and captured - det_captured <= 0.6
+        paired = active and det_frame is not None and time.time() - det_captured <= 1
+        if paired:
+            captured, frame = det_captured, det_frame
+        if captured <= last_sent:
+            stop.wait(0.01)
+            continue
         encode_start = time.perf_counter()
         ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
         encode_ms = (time.perf_counter() - encode_start) * 1000
         if ok:
+            last_sent = captured
             sequence += 1
             emit({"type":"camera_frame","sequence":sequence,"capturedAt":round(captured*1000),
                   "width":frame.shape[1],"height":frame.shape[0],
-                  "detections":detections if fresh else [],
-                  "detector":"YOLOv8 · 本机推理" if active else "未启用",
+                  "detections":detections if paired else [],
+                  "detector":"YOLOv8 · 本机推理" if paired else "本帧无检测结果",
                   "timing":{"inferenceMs":round(inference_ms,1),"encodeMs":round(encode_ms,1),
                             "processingMs":round((time.time()-captured)*1000,1),
                             "decodeThreads":1,"inferenceThreads":cpu_threads if device == "cpu" else 0},

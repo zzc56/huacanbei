@@ -29,15 +29,17 @@ export function useRecordedCamera(video: Ref<HTMLVideoElement | null>, enabled?:
       const latest=desired?.meta.imageUrl===request.meta.imageUrl;
       // Live playback may finish one in-flight frame while newer frames arrive.
       // Its boxes come from that exact request, never from the newest store frame.
-      if(success&&(latest||request.source==='live')&&
-        (request.source!=='live'||!store.playing&&latest||Date.now()-request.meta.timestamp<=700)){
+      const live=request.source==='live'||request.source==='vehicle';
+      const maxAgeMs=request.source==='vehicle'?1500:700;
+      if(success&&(latest||live)&&
+        (!live||!store.playing&&latest||Date.now()-request.meta.timestamp<=maxAgeMs)){
         ready.value={image,targets:request.targets,meta:request.meta};syncVideo();
       }else if(latest)ready.value=null;
       if(!success)image.src='';
       loadLatest();
     };
     image.onload=()=>finish(true);image.onerror=()=>finish(false);
-    timeout=setTimeout(()=>finish(false),request.source==='live'?700:5000);
+    timeout=setTimeout(()=>finish(false),request.source==='live'||request.source==='vehicle'?700:5000);
     image.src=request.meta.imageUrl;
   };
   watch(()=>enabled?.value===false ? undefined : store.frame.cameraFrame?.imageUrl,()=>{
@@ -45,7 +47,7 @@ export function useRecordedCamera(video: Ref<HTMLVideoElement | null>, enabled?:
     if(enabled?.value===false){desired=undefined;attemptedUrl='';cancel();ready.value=null;return;}
     if(!m?.imageUrl){
       // 回放首尾以及两次采集之间的空档没有视觉帧，保留上一张图，避免整块画面变白。
-      if(store.frame.source==='live'){desired=undefined;attemptedUrl='';cancel();ready.value=null;}
+      if(store.frame.source==='live'||store.frame.source==='vehicle'){desired=undefined;attemptedUrl='';cancel();ready.value=null;}
       return;
     }
     if(desired && (desired.source!==store.frame.source || m.sequence<desired.meta.sequence)){
@@ -57,9 +59,9 @@ export function useRecordedCamera(video: Ref<HTMLVideoElement | null>, enabled?:
   // A fusion update can resolve an ID without changing the camera frame. Keep
   // selectable boxes in sync with the store without decoding the image again.
   watch(()=>store.frame,frame=>{
-    if(desired && desired.meta.sequence===frame.cameraFrame?.sequence)
+    if(desired && desired.meta.imageUrl===frame.cameraFrame?.imageUrl)
       desired.targets=frame.targets.filter(t=>t.camera);
-    if(ready.value && ready.value.meta.sequence===frame.cameraFrame?.sequence)
+    if(ready.value && ready.value.meta.imageUrl===frame.cameraFrame?.imageUrl)
       ready.value={...ready.value,targets:frame.targets.filter(t=>t.camera)};
   });
   onUnmounted(()=>{disposed=true;desired=undefined;cancel();});

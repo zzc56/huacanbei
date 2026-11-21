@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { resolve } from 'node:path';
+import type { FastifyInstance } from 'fastify';
 
 export interface CameraOptions { url?: string; python?: string; modelPath?: string }
 interface Detection { x:number; y:number; width:number; height:number; score:number; label:string; track_id:string }
@@ -46,7 +47,10 @@ export class CameraFrameStore {
     for(const listener of this.listeners)listener();
     return true;
   }
-  image(sequence:number) { return this.frames.get(sequence)?.jpeg; }
+  image(sequence:number, capturedAt?:number) {
+    const frame=this.frames.get(sequence);
+    return capturedAt === undefined || frame?.capturedAt === capturedAt ? frame?.jpeg : undefined;
+  }
   snapshot(now=Date.now()) {
     const f=this.latest, fresh=!!f&&now-f.capturedAt<=1500;
     return {
@@ -59,6 +63,15 @@ export class CameraFrameStore {
   }
 }
 
+export function registerCameraFrames(app: FastifyInstance, camera: CameraFrameStore) {
+  app.get<{Params:{sequence:string}; Querystring:{at?:string}}>('/api/live/camera/:sequence.jpg', async (request,reply) => {
+    const at = request.query.at;
+    const jpeg = camera.image(Number(request.params.sequence), at === undefined ? undefined : Number(at));
+    if (!jpeg) return reply.code(404).send({error:'Camera frame expired or unavailable'});
+    return reply.header('Cache-Control','no-store').type('image/jpeg').send(jpeg);
+  });
+}
+
 export class LiveCamera extends CameraFrameStore {
   private child:ChildProcessWithoutNullStreams|undefined;
   private retry:ReturnType<typeof setTimeout>|undefined;
@@ -66,7 +79,7 @@ export class LiveCamera extends CameraFrameStore {
   constructor(private options:CameraOptions={}) {
     super();
     const url=options.url??process.env['CAMERA_RTSP_URL'];
-    if(url)this.start(url);
+    if(url || /^\d+$/.test(process.env['CAMERA_DEVICE_INDEX']??''))this.start(url??'');
   }
   private start(url:string) {
     if(this.disposed)return;

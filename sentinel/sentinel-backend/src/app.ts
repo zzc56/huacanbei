@@ -4,6 +4,9 @@ import { registerStream } from './controllers/stream.controller.js';
 import { PipelineService } from './services/pipeline.service.js';
 import { registerRecording } from './recording/replay.js';
 import { registerLive, type LiveOptions } from './live/service.js';
+import { registerVehicleRisk } from './vehicle/service.js';
+import { registerSimulatedDrive } from './vehicle/drive.js';
+import { LiveCamera, registerCameraFrames } from './live/camera.js';
 
 export function buildApp(mode = process.env['SOURCE_MODE'] ?? 'recording', liveOptions: LiveOptions = {}) {
   const app = Fastify({ logger: false, bodyLimit: 2048, ajv: { customOptions: { removeAdditional: false } } });
@@ -14,8 +17,17 @@ export function buildApp(mode = process.env['SOURCE_MODE'] ?? 'recording', liveO
     if (origin) reply.header('Access-Control-Allow-Origin', origin).header('Vary', 'Origin');
     if (request.method === 'OPTIONS') return reply.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS').header('Access-Control-Allow-Headers', 'Content-Type').code(204).send();
   });
-  if (mode === 'live') {
-    registerLive(app, origins, liveOptions);
+  const camera = mode === 'vehicle' || mode === 'live' ? new LiveCamera(liveOptions.camera) : undefined;
+  registerVehicleRisk(app, camera);
+  registerSimulatedDrive(app, origins, camera);
+  if (camera) {
+    registerCameraFrames(app, camera);
+    app.addHook('onClose', async () => camera.close());
+    if (mode === 'vehicle') {
+      const recordingAvailable = registerRecording(app, origins, true);
+      app.get('/api/health', async () => ({ source: 'vehicle', recordingAvailable }));
+    }
+    else registerLive(app, origins, camera, liveOptions);
   } else if (mode === 'synthetic') {
     const pipeline = new PipelineService();
     registerApi(app, pipeline); registerStream(app, pipeline, origins);
