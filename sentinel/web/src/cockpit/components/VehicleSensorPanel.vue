@@ -9,6 +9,9 @@ const sample = computed(() => props.result?.observations?.[props.kind]);
 const cameraPoints = computed(() => props.result?.observations?.camera?.observations ?? []);
 const scan = computed(() => props.result?.observations?.lidar?.observations ?? []);
 const count = computed(() => sample.value?.observations.length);
+const pixels = computed(() => isCamera.value ? props.result?.capture?.vision : null);
+const countLabel = computed(()=>pixels.value ? pixels.value.detections.length+' 个检测框'
+  : count.value==null ? '等待观测' : count.value+' 个目标');
 const title = computed(() => isCamera.value ? '固定摄像头' : '车载雷达');
 
 // Equal distances on both ground axes occupy equal screen space.
@@ -34,13 +37,14 @@ const radarDots = computed(() => scan.value.map(p => {
   <section class="glass-panel sensor-panel" :class="kind" :aria-label="title + '观测'">
     <header>
       <div class="section-heading"><h2>{{ title }}</h2></div>
-      <span class="count">{{ count == null ? '等待观测' : count + ' 个目标' }}</span>
+      <span class="count">{{ countLabel }}</span>
     </header>
     <div class="plot-caption"><span><UiIcon :name="isCamera ? 'camera' : 'radar'" :size="15" />
-      {{ isCamera ? '场地坐标 · 俯视' : '车身方位 · 俯视' }}</span>
+      {{ isCamera ? ($slots.camera ? '摄像画面 · 标定位置见下方' : '场地坐标 · 俯视') : '车身方位 · 俯视' }}</span>
       <span v-if="sample && !sample.includedInFusion" class="unused">未参与融合</span>
     </div>
-    <svg v-if="isCamera" viewBox="0 0 268 129" class="sensor-plot" role="img" aria-label="固定摄像头检测目标的地面位置">
+    <slot v-if="$slots.camera && isCamera" name="camera" />
+    <svg v-else-if="isCamera" viewBox="0 0 268 129" class="sensor-plot" role="img" aria-label="固定摄像头检测目标的地面位置">
       <g class="grid">
         <path v-for="i in 9" :key="'x'+i" :d="'M' + (38 + (i-1)*24) + ' 10v96'" />
         <path v-for="i in 5" :key="'y'+i" :d="'M38 ' + (10 + (i-1)*24) + 'h192'" />
@@ -73,7 +77,7 @@ const radarDots = computed(() => scan.value.map(p => {
         <div v-for="(p, i) in scan" :key="i"><b>L{{ i+1 }}</b><span>距离 {{ p.rangeM.toFixed(2) }} m</span><span>方位 {{ p.bearingDeg.toFixed(1) }}°</span></div>
       </template>
     </div>
-    <p v-else>{{ sample ? '本帧未发现目标' : '等待有效观测' }}</p>
+    <p v-else>{{ pixels ? '地面观测 · '+(sample ? '本帧无定位目标' : '等待标定坐标') : sample ? '本帧未发现目标' : '等待有效观测' }}</p>
   </section>
 </template>
 

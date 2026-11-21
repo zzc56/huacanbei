@@ -1,19 +1,33 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import type { VehicleResult, VehicleDemoResult } from '../../../sentinel-backend/src/vehicle/contracts';
-import CockpitBrand from './components/CockpitBrand.vue';
+import StatusBar from './components/StatusBar.vue';
 import UiIcon from './components/UiIcon.vue';
-import { fieldLegend } from './core/fieldColors';
+import { vehicleFieldLegend } from './core/fieldColors';
 import './styles.css';
 import VehicleRiskMap from './components/VehicleRiskMap.vue';
 import VehicleSensorPanel from './components/VehicleSensorPanel.vue';
+import Dashboard from './Dashboard.vue';
+import SceneViewport from './components/SceneViewport.vue';
+import { vehicleScene } from './core/vehicleScene';
+import { useSceneStore } from './stores/scene';
+import { RealDataAdapter } from '../core/RealDataAdapter';
+import type { ViewMode } from './renderers/lightScene';
 
 const route = useRoute();
+const router = useRouter();
+const tabs = [{id:'overview',name:'总览',icon:'layers'}, {id:'camera',name:'摄像头感知',icon:'camera'},
+  {id:'radar',name:'雷达探测',icon:'radar'}, {id:'risk',name:'风险场',icon:'risk'}] as const;
+const view = computed(()=>tabs.find(t=>t.id===route.query.view)?.id ?? 'overview');
+function openView(next: ViewMode | 'overview') {
+  void router.push({name:'vehicle',query:{...route.query,view:next==='overview'?undefined:next}});
+}
 const endpoint = new URL(import.meta.env.VITE_STREAM_URL || 'http://127.0.0.1:3001', window.location.href);
 if (endpoint.protocol === 'ws:') endpoint.protocol = 'http:';
 if (endpoint.protocol === 'wss:') endpoint.protocol = 'https:';
 const base = endpoint.origin + '/api/vehicle/';
+const originalMonitor=ref('');
 const sources = { camera: '固定摄像头', lidar: '车载雷达', both: '摄像头 + 雷达' };
 const actions = { cruise: '巡航', slow: '减速', stop: '停车' };
 const reasons = {
@@ -24,6 +38,19 @@ const reasons = {
 const stageLabels = ['前方畅通', '摄像头先发现', '两路看到同一人', '近距离停车'];
 const mode = ref<'demo' | 'input'>('demo'), playing = ref(false), error = ref('');
 const frame = shallowRef<VehicleResult | null>(null), demo = shallowRef<VehicleDemoResult | null>(null);
+const store=useSceneStore();
+const previous={frame:store.frame,selectedId:store.selectedId,playing:store.playing,connection:store.connection,videoSource:store.videoSource};
+store.videoSource={type:'mock'};
+watch(()=>store.videoSource.url,(_,old)=>{if(old?.startsWith('blob:'))URL.revokeObjectURL(old);});
+let adapter=new RealDataAdapter(endpoint.origin);
+const frozen=ref(false), refreshHz=ref(0), requestMs=ref<number|null>(null);
+let receipts:number[]=[];
+watch([frame,mode],()=>{
+  store.frame=adapter.trails(vehicleScene(frame.value,mode.value==='demo',endpoint.origin));
+  store.connection=frame.value ? 'connected' : error.value ? 'error' : 'connecting';
+  if(!store.frame.targets.some(t=>t.id===store.selectedId))store.select(store.frame.targets[0]?.id ?? '—');
+},{immediate:true,flush:'sync'});
+watch([playing,mode,frozen],()=>{store.playing=mode.value==='demo'?playing.value:!frozen.value;},{immediate:true,flush:'sync'});
 const stageIndex = computed(() => {
   const sample = demo.value;
   return sample ? sample.stages.filter(step => step <= sample.step).length - 1 : -1;
@@ -33,7 +60,8 @@ const observationStatus = computed(() => {
   if (error.value) return '连接中断';
   if (!frame.value) return '连接中';
   if (mode.value === 'demo') return playing.value ? '正在回放' : '离线回放';
-  return frame.value.field ? '收到有效观测' : '等待有效观测';
+  if(frozen.value)return '显示已冻结';
+  return frame.value.field ? '收到有效观测' : frame.value.capture?.vision ? '摄像头在线' : '等待有效观测';
 });
 function playbackSeconds(step: number) {
   return ((demo.value?.tickMs ?? 0) * step / 1000).toFixed(1);
@@ -48,6 +76,7 @@ async function load(step = 0) {
   cancel();
   const controller = new AbortController();
   active = controller;
+  const started=performance.now();
   try {
     const path = mode.value === 'demo' ? 'demo/' + step : 'frame';
     const response = await fetch(base + path, { cache: 'no-store',
@@ -56,9 +85,13 @@ async function load(step = 0) {
     const data = await response.json();
     if (controller.signal.aborted) return;
     if (!data?.motion || !data.observations || !Array.isArray(data.obstacles)) throw Error();
+    const received=performance.now();
+    requestMs.value=Math.round(received-started);
+    receipts=receipts.filter(t=>received-t<1000);
+    receipts.push(received);refreshHz.value=receipts.length;
     frame.value = data;
     error.value = '';
-    if (mode.value === 'input') {
+    if (mode.value === 'input' && !frozen.value) {
       timer = setTimeout(() => void load(), 100);
     } else {
       const sample: VehicleDemoResult = data;
@@ -69,42 +102,73 @@ async function load(step = 0) {
   } catch {
     if (controller.signal.aborted) return;
     frame.value = null;
+    requestMs.value=null;refreshHz.value=0;receipts=[];
     error.value = '未收到后端结果，请检查 SENTINEL 服务连接。';
     playing.value = false;
     if (mode.value === 'input') timer = setTimeout(() => void load(), 500);
   }
 }
 function setMode(next: 'demo' | 'input') {
+  if(mode.value===next)return;
+  cancel(); adapter=new RealDataAdapter(endpoint.origin); frozen.value=false; store.videoSource={type:'mock'};
   mode.value = next; playing.value = false; demo.value = null; frame.value = null; error.value = '';
   void load();
 }
 function seek(step: number) { playing.value = false; void load(step); }
 function toggle() {
+  if(mode.value==='input') {
+    frozen.value=!frozen.value;
+    if(frozen.value)cancel();else void load();
+    return;
+  }
   if (playing.value) { cancel(); playing.value = false; return; }
   const step = demo.value && demo.value.step < demo.value.lastStep ? demo.value.step : 0;
   playing.value = true;
   void load(step);
 }
-onMounted(() => void load());
-onUnmounted(cancel);
+onMounted(() => {
+  void load();
+  void fetch(new URL('/api/health',endpoint),{signal:AbortSignal.timeout(1500)}).then(r=>r.json()).then(h=>{
+    originalMonitor.value=h.recordingAvailable||h.source==='recording'?'历史实测回放':h.source==='live'?'原实时驾驶舱':'';
+  }).catch(()=>{});
+});
+onUnmounted(()=>{cancel();
+  if(store.videoSource.url?.startsWith('blob:'))URL.revokeObjectURL(store.videoSource.url);
+  Object.assign(store,previous);});
 </script>
 
 <template>
   <main class="vehicle-platform">
     <div class="cockpit-stage vehicle-stage">
-      <header class="system-header glass-panel vehicle-header">
-        <CockpitBrand title="车路协同监控平台" subtitle="SENTINEL / VEHICLE–ROAD COOPERATION" />
-        <nav class="view-tabs vehicle-tabs" aria-label="观测来源">
-          <button :class="{ active: mode === 'demo' }" :aria-pressed="mode === 'demo'" @click="setMode('demo')"><UiIcon name="layers" />离线演示</button>
-          <button :class="{ active: mode === 'input' }" :aria-pressed="mode === 'input'" @click="setMode('input')"><UiIcon name="link" />接口观测</button>
+      <StatusBar class="vehicle-header" vehicle :status-text="observationStatus" :refresh-hz="store.playing ? refreshHz : 0" :request-ms="requestMs" @toggle="toggle" />
+      <div class="glass-panel vehicle-navigation">
+        <nav class="view-tabs" aria-label="感知视图">
+          <button v-for="tab in tabs" :key="tab.id" :class="{active:view===tab.id}" :aria-pressed="view===tab.id" @click="openView(tab.id)">
+            <UiIcon :name="tab.icon" :size="18" />{{ tab.name }}
+          </button>
         </nav>
-        <router-link v-if="route.query.from === 'cockpit'" class="back-link" to="/">返回驾驶舱</router-link>
-      </header>
+        <div class="view-actions">
+          <span v-if="view!=='overview' && frame" class="detail-action">{{ actions[frame.motion.action] }} · {{ frame.motion.speedLimitMps.toFixed(2) }} m/s</span>
+          <button :aria-pressed="mode==='demo'" @click="setMode('demo')">离线演示</button>
+          <button :aria-pressed="mode==='input'" @click="setMode('input')">实车观测</button>
+          <router-link v-if="originalMonitor||route.query.from==='cockpit'" class="back-link" to="/">{{ originalMonitor||'原驾驶舱' }}</router-link>
+        </div>
+      </div>
       <p v-if="error" class="connection" role="alert">{{ error }} <button @click="load(demo?.step ?? 0)">重试</button></p>
 
-      <div class="vehicle-layout">
+      <div class="vehicle-layout" :class="{'detail-layout':view!=='overview'}">
+        <Dashboard v-if="view!=='overview'" :vehicle-view="view" />
+        <template v-else>
         <div class="vehicle-sensors">
-          <VehicleSensorPanel kind="camera" :result="frame" />
+          <VehicleSensorPanel kind="camera" :result="frame">
+            <template #camera>
+              <div class="vehicle-camera">
+                <SceneViewport mode="camera" :targets="store.frame.targets" :time="store.frame.timestamp/1000" compact />
+                <span v-if="store.videoSource.type!=='mock'" class="preview-source">独立预览 · 未参与融合</span>
+                <button class="expand-camera" aria-label="展开摄像头感知" @click="openView('camera')"><UiIcon name="focus" :size="16"/></button>
+              </div>
+            </template>
+          </VehicleSensorPanel>
           <VehicleSensorPanel kind="lidar" :result="frame" />
         </div>
         <section class="glass-panel field-panel" aria-label="融合风险场">
@@ -122,7 +186,7 @@ onUnmounted(cancel);
           <VehicleRiskMap :result="frame" :corridor="showCorridor" :contours="showContours" />
           <footer class="plot-legend">
             <span class="corridor-key"><i />前方通道</span>
-            <span class="color-key">相对风险 <small>0</small><i :style="{ background: fieldLegend }" /><small>1</small></span>
+            <span class="color-key">相对风险 <small>0</small><i :style="{ background: vehicleFieldLegend }" /><small>1</small></span>
           </footer>
         </section>
 
@@ -139,7 +203,7 @@ onUnmounted(cancel);
               <div><dt>通道内最近距离</dt><dd>{{ frame?.closestForwardM?.toFixed(2) ?? '—' }} <small>m</small></dd></div>
             </dl>
             <div class="risk-reading"><span>通道风险峰值</span><strong>{{ frame?.corridorRisk?.toFixed(3) ?? '—' }}</strong></div>
-            <div class="risk-scale" aria-hidden="true"><b v-if="frame?.corridorRisk != null" :style="{ left: frame.corridorRisk * 100 + '%' }" /></div>
+            <div class="risk-scale" :style="{ background: vehicleFieldLegend }" aria-hidden="true"><b v-if="frame?.corridorRisk != null" :style="{ left: frame.corridorRisk * 100 + '%' }" /></div>
           </section>
 
           <section class="glass-panel observations" aria-label="融合目标">
@@ -154,6 +218,7 @@ onUnmounted(cancel);
             <p v-else class="no-targets">{{ frame?.field ? '当前帧未发现障碍' : '等待有效观测' }}</p>
           </section>
         </aside>
+        </template>
 
         <section v-if="mode === 'demo'" class="glass-panel replay-panel" aria-label="演示回放">
           <div class="replay-command">

@@ -6,6 +6,7 @@
   },
   "camera": {
     "enabled": false,
+    "deviceIndex": null,
     "rtspUrl": "rtsp://192.0.2.30/",
     "localAddress": "192.0.2.20",
     "pythonPath": "",

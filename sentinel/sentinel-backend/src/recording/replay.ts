@@ -104,15 +104,22 @@ export class Recording {
   }
 }
 
-export function registerRecording(app: FastifyInstance, origins: Set<string>) {
+export function registerRecording(app: FastifyInstance, origins: Set<string>, optional = false) {
   const root = resolve(process.env['RECORDING_DIR'] ?? fileURLToPath(new URL('../../../../数据保存/', import.meta.url)));
-  const recording = new Recording(root);
+  if(optional && !existsSync(root)) return false;
+  let recording: Recording;
+  try { recording = new Recording(root); }
+  catch(error) {
+    if(!optional)throw error;
+    app.log.warn('历史数据包不完整，车路协同独立运行');
+    return false;
+  }
   const wss = new WebSocketServer({ noServer: true, maxPayload: 2048, perMessageDeflate: false });
   const clients = new Set<WebSocket>();
   app.get('/api/replay/manifest', async () => recording.manifest);
   app.get('/api/replay/associations', async () => recording.vehicleAssociator.report);
   app.get('/api/config', async () => ({ source: 'recording', sensorHz: 10, ...recording.manifest }));
-  app.get('/api/health', async () => ({ state: 'ready', source: 'recording', clients: clients.size }));
+  if(!optional)app.get('/api/health', async () => ({ state: 'ready', source: 'recording', clients: clients.size }));
   app.get<{ Querystring: { timeMs?: string } }>('/api/replay/frame', async (req, reply) => {
     const time = Number(req.query.timeMs ?? 0);
     if (!Number.isFinite(time) || time < 0) return reply.code(400).send({ error: 'Invalid timeMs' });
@@ -169,4 +176,5 @@ export function registerRecording(app: FastifyInstance, origins: Set<string>) {
     socket.on('close', cleanup); socket.on('error', () => { cleanup(); socket.terminate(); });
   });
   app.addHook('onClose', async () => { for (const client of clients) client.terminate(); await new Promise<void>(done => wss.close(() => done())); });
+  return true;
 }

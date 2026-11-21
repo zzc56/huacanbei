@@ -8,8 +8,8 @@ function makeFrame(travelM: number, speedMps: number, capturedAtMs: number): Veh
   const distanceM = 1 - travelM;
   return {
     pose: { xM: 1 + travelM, yM: 1, headingDeg: 90, speedMps, capturedAtMs },
-    camera: { capturedAtMs, observations: distanceM <= 0.69 ? [{ xM: 2, yM: 1 }] : [] },
-    lidar: { capturedAtMs, observations: distanceM <= 0.50 ? [{ rangeM: distanceM, bearingDeg: 0 }] : [] },
+    camera: { capturedAtMs, observations: distanceM <= 0.69 ? [{ xM: 2, yM: 1, trackId:'P1' }] : [] },
+    lidar: { capturedAtMs, observations: distanceM <= 0.50 ? [{ rangeM: distanceM, bearingDeg: 0, trackId:'L1' }] : [] },
   };
 }
 

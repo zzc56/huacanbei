@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { Ajv } from 'ajv';
 import { evaluateVehicleRisk, vehicleLimits, type VehicleFrame } from './risk.js';
 import { buildVehicleDemo } from './demo.js';
+import type { CameraFrameStore } from '../live/camera.js';
 
 const time = { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER };
 const coordinate = { type: 'number', minimum: -1000, maximum: 1000 };
@@ -18,19 +19,26 @@ const scanPoint = {
   properties: { rangeM: { type: 'number', exclusiveMinimum: 0, maximum: 20 }, bearingDeg: angle },
 };
 
-function sensorSchema(items: typeof point | typeof scanPoint, maxItems: number) {
+function sensorSchema(items: typeof point | typeof scanPoint, maxItems: number, camera = false) {
+  const tracked = { ...items, properties: { ...items.properties, trackId: {type:'string', pattern:'^[a-zA-Z0-9_-]{1,40}$'} } };
   return { anyOf: [{
     type: 'object', additionalProperties: false, required: ['capturedAtMs', 'observations'],
-    properties: { capturedAtMs: time, observations: { type: 'array', maxItems, items } },
+    properties: { capturedAtMs: time, observations: { type: 'array', maxItems, items: tracked },
+      ...(camera ? { sequence: { type:'integer', minimum:1, maximum:Number.MAX_SAFE_INTEGER } } : {}) },
   }, { type: 'null' }] };
 }
 
-export function registerVehicleRisk(app: FastifyInstance): void {
+export function registerVehicleRisk(app: FastifyInstance, camera?: CameraFrameStore): void {
   let latest: VehicleFrame | null = null;
   let demo: ReturnType<typeof buildVehicleDemo> | undefined;
+  function current(now: number) {
+    const result = evaluateVehicleRisk(latest, now);
+    if (camera) result.capture = camera.snapshot(now);
+    return result;
+  }
   app.get('/api/vehicle/frame', async (_request, reply) => {
     reply.header('Cache-Control', 'no-store');
-    return evaluateVehicleRisk(latest, Date.now());
+    return current(Date.now());
   });
   app.get<{ Params: { step: string } }>('/api/vehicle/demo/:step', async (request, reply) => {
     demo ??= buildVehicleDemo();
@@ -53,12 +61,16 @@ export function registerVehicleRisk(app: FastifyInstance): void {
           properties: { ...point.properties, headingDeg: angle, capturedAtMs: time,
             speedMps: { type: 'number', minimum: 0, maximum: 2 } },
         },
-        camera: sensorSchema(point, 32),
+        camera: sensorSchema(point, 32, true),
         lidar: sensorSchema(scanPoint, 64),
       },
     } },
   }, async (request, reply) => {
     const frame = request.body, now = Date.now();
+    for (const sample of [frame.camera, frame.lidar]) {
+      const ids = sample?.observations.flatMap(p => p.trackId ? [p.trackId] : []) ?? [];
+      if (new Set(ids).size !== ids.length) return reply.code(400).send({ error:'单路同帧的跟踪编号必须唯一' });
+    }
     if ([frame.pose, frame.camera, frame.lidar].some(sample => sample && sample.capturedAtMs > now)) {
       return reply.code(400).send({ error: '观测时间超前' });
     }
@@ -66,6 +78,6 @@ export function registerVehicleRisk(app: FastifyInstance): void {
       return reply.code(409).send({ error: '已接收更新的位姿' });
     }
     latest = frame;
-    return evaluateVehicleRisk(frame, now);
+    return current(now);
   });
 }

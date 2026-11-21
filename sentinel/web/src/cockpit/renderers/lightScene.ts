@@ -498,8 +498,9 @@ export function mapTargets(
   for (const t of [...targets].sort(
     (a, b) => Number(a.id === selectedId) - Number(b.id === selectedId),
   )) {
-    if (!t.fusion || (mode === 'radar' && !t.radar)) continue;
+    if (mode === 'radar' && !t.radar) continue;
     const polar = mode==='radar' && t.radar ? {x:t.radar.range*Math.sin(t.radar.azimuth*Math.PI/180),y:t.radar.range*Math.cos(t.radar.azimuth*Math.PI/180)} : t.fusion;
+    if (!polar) continue;
     const [x, y] = map(polar.x, polar.y),
       color = riskTone(t),
       selected = t.id === selectedId;

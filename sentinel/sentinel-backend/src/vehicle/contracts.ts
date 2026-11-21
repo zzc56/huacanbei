@@ -3,9 +3,12 @@ export interface GroundPoint {
   yM: number;
 }
 
+export interface CameraPoint extends GroundPoint { trackId?: string }
+
 export interface ScanPoint {
   rangeM: number;
   bearingDeg: number;
+  trackId?: string;
 }
 
 export interface SensorSample<T> {
@@ -17,6 +20,8 @@ type SensorView<T> = SensorSample<T> & { includedInFusion: boolean };
 
 export interface VehicleObstacle extends GroundPoint {
   source: 'camera' | 'lidar' | 'both';
+  cameraIndex?: number;
+  lidarIndex?: number;
 }
 
 export interface VehicleField {
@@ -32,9 +37,11 @@ export interface VehicleField {
 
 export interface VehicleResult {
   observations: {
-    camera: SensorView<GroundPoint> | null;
+    camera: (SensorView<CameraPoint> & { sequence?: number }) | null;
     lidar: SensorView<ScanPoint> | null;
   };
+  capture?: ReturnType<import('../live/camera.js').CameraFrameStore['snapshot']>;
+  evaluatedAtMs: number;
   obstacles: VehicleObstacle[];
   field: VehicleField | null;
   corridorRisk: number | null;

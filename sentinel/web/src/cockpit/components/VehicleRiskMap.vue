@@ -40,7 +40,7 @@ function draw() {
   heat.width = field.width; heat.height = field.height;
   const raster = heat.getContext('2d')!;
   const image = raster.createImageData(field.width, field.height);
-  field.values.forEach((v, i) => paintFieldCell(image.data, i * 4, v));
+  field.values.forEach((v, i) => paintFieldCell(image.data, i * 4, v, true));
   raster.putImageData(image, 0, 0);
   ctx.save();
   ctx.translate(x(field.xMin), y(field.yMin)); ctx.scale(cell, -cell);

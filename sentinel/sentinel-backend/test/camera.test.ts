@@ -1,6 +1,32 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {CameraFrameStore} from '../src/live/camera.js';
+import Fastify from 'fastify';
+import {CameraFrameStore, registerCameraFrames} from '../src/live/camera.js';
+import {registerVehicleRisk} from '../src/vehicle/service.js';
+import type {VehicleResult} from '../src/vehicle/contracts.js';
+
+test('vehicle input exposes fresh camera pixels and boxes even without a pose; replay stays isolated', async t=>{
+  t.mock.timers.enable({apis:['Date'],now:5000});
+  const app=Fastify(), camera=new CameraFrameStore();
+  t.after(()=>app.close());
+  registerCameraFrames(app,camera);
+  registerVehicleRisk(app,camera);
+  const jpeg=Buffer.from([255,216,12,34,255,217]);
+  const detection={x:10,y:20,width:40,height:80,score:.91,label:'person',track_id:'V001'};
+  assert.ok(camera.accept({sequence:8,capturedAt:5000,width:320,height:240,jpeg:jpeg.toString('base64'),detections:[detection]}));
+  const frame=(await app.inject('/api/vehicle/frame')).json<VehicleResult>();
+  assert.equal(frame.motion.action,'stop');
+  assert.equal(frame.field,null);
+  assert.deepEqual(frame.capture?.vision?.detections,[detection]);
+  const url=frame.capture!.vision!.imageUrl;
+  const image=await app.inject(url+'?at=5000');
+  assert.equal(image.headers['content-type'],'image/jpeg');
+  assert.deepEqual(image.rawPayload,jpeg);
+  assert.equal((await app.inject(url+'?at=4999')).statusCode,404);
+  assert.equal((await app.inject('/api/vehicle/demo/0')).json<VehicleResult>().capture,undefined);
+  t.mock.timers.tick(1600);
+  assert.equal((await app.inject('/api/vehicle/frame')).json<VehicleResult>().capture?.vision,null);
+});
 
 test('camera images and boxes stay sequence-bound; stale and invalid frames cannot become live',()=>{
   const store=new CameraFrameStore(),now=Date.now(),jpeg=Buffer.from([255,216,1,2,255,217]);

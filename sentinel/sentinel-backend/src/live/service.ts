@@ -2,7 +2,7 @@ import net from 'node:net';
 import type { FastifyInstance } from 'fastify';
 import { WebSocket, WebSocketServer } from 'ws';
 import { Tcr300Decoder, type RadarObservation } from './tcr300.js';
-import { LiveCamera, type CameraOptions } from './camera.js';
+import type { LiveCamera, CameraOptions } from './camera.js';
 import { LiveRiskField } from './risk.js';
 
 export interface LiveOptions { host?: string; port?: number; localAddress?: string; camera?:CameraOptions }
@@ -92,9 +92,8 @@ export class LiveRadar {
   close() { this.disposed = true; clearTimeout(this.retry); this.socket?.destroy(); }
 }
 
-export function registerLive(app: FastifyInstance, origins: Set<string>, options: LiveOptions = {}) {
+export function registerLive(app: FastifyInstance, origins: Set<string>, camera: LiveCamera, options: LiveOptions = {}) {
   const radar = new LiveRadar(options);
-  const camera = new LiveCamera(options.camera);
   const risk = new LiveRiskField();
   const packet=()=>{
     const frame=radar.packet(), capture=camera.snapshot();
@@ -111,11 +110,6 @@ export function registerLive(app: FastifyInstance, origins: Set<string>, options
   app.get('/api/health', async () => ({ source: 'live', state: packet().live.radar.state, clients: clients.size }));
   app.get('/api/live/status', async () => packet().live);
   app.get('/api/live/frame', async () => packet());
-  app.get<{Params:{sequence:string}}>('/api/live/camera/:sequence.jpg',async(request,reply)=>{
-    const jpeg=camera.image(Number(request.params.sequence));
-    if(!jpeg)return reply.code(404).send({error:'Camera frame expired or unavailable'});
-    return reply.header('Cache-Control','no-store').type('image/jpeg').send(jpeg);
-  });
   app.server.on('upgrade', (req, socket, head) => {
     if (req.url !== '/stream' || clients.size >= 32 || req.headers.origin && !origins.has(req.headers.origin)) { socket.destroy(); return; }
     server.handleUpgrade(req, socket, head, ws => server.emit('connection', ws, req));
@@ -146,5 +140,5 @@ export function registerLive(app: FastifyInstance, origins: Set<string>, options
     socket.on('error', () => socket.terminate());
     socket.on('close', () => { clearInterval(timer); unsubscribeCamera(); clients.delete(socket); });
   });
-  app.addHook('onClose', async () => { radar.close(); camera.close(); for (const client of clients) client.terminate(); await new Promise<void>(resolve => server.close(() => resolve())); });
+  app.addHook('onClose', async () => { radar.close(); for (const client of clients) client.terminate(); await new Promise<void>(resolve => server.close(() => resolve())); });
 }
