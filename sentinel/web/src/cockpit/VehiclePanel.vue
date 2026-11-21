@@ -2,6 +2,10 @@
 import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue';
 import { useRoute } from 'vue-router';
 import type { VehicleResult, VehicleDemoResult } from '../../../sentinel-backend/src/vehicle/contracts';
+import CockpitBrand from './components/CockpitBrand.vue';
+import UiIcon from './components/UiIcon.vue';
+import { fieldLegend } from './core/fieldColors';
+import './styles.css';
 import VehicleRiskMap from './components/VehicleRiskMap.vue';
 
 const route = useRoute();
@@ -23,6 +27,16 @@ const stageIndex = computed(() => {
   const sample = demo.value;
   return sample ? sample.stages.filter(step => step <= sample.step).length - 1 : -1;
 });
+const showCorridor = ref(true), showContours = ref(true);
+const observationStatus = computed(() => {
+  if (error.value) return '连接中断';
+  if (!frame.value) return '连接中';
+  if (mode.value === 'demo') return playing.value ? '正在回放' : '离线回放';
+  return frame.value.field ? '收到有效观测' : '等待有效观测';
+});
+function playbackSeconds(step: number) {
+  return ((demo.value?.tickMs ?? 0) * step / 1000).toFixed(1);
+}
 let timer: ReturnType<typeof setTimeout> | undefined, active: AbortController | undefined;
 
 function cancel() {
@@ -75,79 +89,94 @@ onUnmounted(cancel);
 </script>
 
 <template>
-  <main class="vehicle-shell">
-    <header>
-      <div class="vehicle-title"><img src="/sentinel.svg" alt="" /><div><small>SENTINEL</small><h1>车路协同风险场</h1></div></div>
-      <nav aria-label="观测来源">
-        <router-link v-if="route.query.from === 'cockpit'" to="/">返回驾驶舱</router-link>
-        <button :aria-pressed="mode === 'demo'" @click="setMode('demo')">离线演示</button>
-        <button :aria-pressed="mode === 'input'" @click="setMode('input')">接口观测</button>
-      </nav>
-    </header>
-    <p v-if="error" class="connection" role="alert">{{ error }} <button @click="load(demo?.step ?? 0)">重试</button></p>
-    <div class="vehicle-grid">
-      <section class="card">
-        <div class="card-title"><h2>前方风险场</h2><span>{{ mode === 'demo' ? '模拟观测 · 静止行人' : '已提交的观测帧' }}</span></div>
-        <VehicleRiskMap :result="frame" />
-        <p class="legend">虚线为前方通道<span>场值低 <i /> 高</span></p>
-      </section>
-      <section class="card decision" aria-label="车辆决策">
-        <h2>车辆决策</h2>
-        <div class="command" :data-action="frame?.motion.action">
-          <strong>{{ frame ? actions[frame.motion.action] : '等待数据' }}</strong>
-          <p>{{ frame ? reasons[frame.motion.reason] : '等待风险计算结果' }}</p>
-        </div>
-        <dl>
-          <div><dt>速度上限</dt><dd>{{ frame?.motion.speedLimitMps.toFixed(2) ?? '—' }} <small>m/s</small></dd></div>
-          <div><dt>通道内最近距离</dt><dd>{{ frame?.closestForwardM?.toFixed(2) ?? '—' }} <small>m</small></dd></div>
-          <div><dt>通道风险峰值</dt><dd>{{ frame?.corridorRisk?.toFixed(3) ?? '—' }}</dd></div>
-        </dl>
-      </section>
-      <section class="card counts">
-        <h2>障碍观测</h2>
-        <dl><div><dt>固定摄像头</dt><dd>{{ frame?.cameraCount ?? '—' }}</dd></div>
-          <div><dt>车载雷达</dt><dd>{{ frame?.lidarCount ?? '—' }}</dd></div>
-          <div><dt>融合后目标</dt><dd>{{ frame?.field ? frame.obstacles.length : '—' }}</dd></div></dl>
-        <ul v-if="frame?.obstacles.length" aria-label="融合目标">
-          <li v-for="(o, i) in frame.obstacles" :key="i">{{ sources[o.source] }} · 横向 {{ o.xM.toFixed(2) }} m，纵向 {{ o.yM.toFixed(2) }} m</li>
-        </ul>
-      </section>
-      <section v-if="mode === 'demo'" class="card playback">
-        <div class="card-title"><h2>演示回放</h2><button class="play" @click="toggle">{{ playing ? '暂停' : demo && demo.step === demo.lastStep ? '重新播放' : '播放演示' }}</button></div>
-        <div class="stages" aria-label="演示阶段">
-          <button v-for="(step, i) in demo?.stages" :key="step" :aria-pressed="stageIndex === i" @click="seek(step)">{{ stageLabels[i] }}</button>
-        </div>
-      </section>
+  <main class="vehicle-platform">
+    <div class="cockpit-stage vehicle-stage">
+      <header class="system-header glass-panel vehicle-header">
+        <CockpitBrand title="车路协同监控平台" subtitle="SENTINEL / VEHICLE–ROAD COOPERATION" />
+        <nav class="view-tabs vehicle-tabs" aria-label="观测来源">
+          <button :class="{ active: mode === 'demo' }" :aria-pressed="mode === 'demo'" @click="setMode('demo')"><UiIcon name="layers" />离线演示</button>
+          <button :class="{ active: mode === 'input' }" :aria-pressed="mode === 'input'" @click="setMode('input')"><UiIcon name="link" />接口观测</button>
+        </nav>
+        <router-link v-if="route.query.from === 'cockpit'" class="back-link" to="/">返回驾驶舱</router-link>
+      </header>
+      <p v-if="error" class="connection" role="alert">{{ error }} <button @click="load(demo?.step ?? 0)">重试</button></p>
+
+      <div class="vehicle-layout">
+        <section class="glass-panel field-panel" aria-label="前方风险场">
+          <div class="panel-top">
+            <div class="section-heading"><h2>前方风险场</h2></div>
+            <span class="status" :class="{ muted: !frame?.field }"><i class="live-dot" />{{ observationStatus }}</span>
+          </div>
+          <div class="map-toolbar">
+            <span>{{ mode === 'demo' ? '模拟观测 · 低速直行 · 静止行人' : '接口观测 · 车身坐标系' }}</span>
+            <div class="map-options" aria-label="图层">
+              <button :aria-pressed="showCorridor" @click="showCorridor = !showCorridor">通道</button>
+              <button :aria-pressed="showContours" @click="showContours = !showContours">等值线</button>
+            </div>
+          </div>
+          <VehicleRiskMap :result="frame" :corridor="showCorridor" :contours="showContours" />
+          <footer class="plot-legend">
+            <span class="corridor-key"><i />前方通道</span>
+            <span class="color-key">相对风险 <small>0</small><i :style="{ background: fieldLegend }" /><small>1</small></span>
+          </footer>
+        </section>
+
+        <aside class="vehicle-rail">
+          <section class="glass-panel decision-panel" aria-label="车辆决策">
+            <div class="panel-top"><div class="section-heading"><h2>车辆决策</h2></div><UiIcon name="car" /></div>
+            <div class="decision-band" :data-action="frame?.motion.action">
+              <span class="action-symbol"><UiIcon :name="frame?.motion.action === 'stop' ? 'risk' : frame?.motion.action === 'slow' ? 'pulse' : 'car'" :size="26" /></span>
+              <div><strong>{{ frame ? actions[frame.motion.action] : '等待数据' }}</strong>
+                <p>{{ frame ? reasons[frame.motion.reason] : '等待风险计算结果' }}</p></div>
+            </div>
+            <dl class="metrics">
+              <div><dt>速度上限</dt><dd>{{ frame?.motion.speedLimitMps.toFixed(2) ?? '—' }} <small>m/s</small></dd></div>
+              <div><dt>通道内最近距离</dt><dd>{{ frame?.closestForwardM?.toFixed(2) ?? '—' }} <small>m</small></dd></div>
+            </dl>
+            <div class="risk-reading"><span>通道风险峰值</span><strong>{{ frame?.corridorRisk?.toFixed(3) ?? '—' }}</strong></div>
+            <div class="risk-scale" aria-hidden="true"><b v-if="frame?.corridorRisk != null" :style="{ left: frame.corridorRisk * 100 + '%' }" /></div>
+          </section>
+
+          <section class="glass-panel observations" aria-label="障碍观测">
+            <div class="panel-top"><div class="section-heading"><h2>障碍观测</h2></div><UiIcon name="layers" /></div>
+            <div class="sensor-flow">
+              <dl class="inputs">
+                <div><dt><UiIcon name="camera" :size="17" />固定摄像头</dt><dd>{{ frame?.cameraCount ?? '—' }}</dd></div>
+                <div><dt><UiIcon name="radar" :size="17" />车载雷达</dt><dd>{{ frame?.lidarCount ?? '—' }}</dd></div>
+              </dl>
+              <i class="merge-lines" aria-hidden="true" />
+              <dl class="fused-count"><dt>融合后目标</dt><dd>{{ frame?.field ? frame.obstacles.length : '—' }}</dd></dl>
+            </div>
+            <div v-if="frame?.obstacles.length" class="target-scroll" tabindex="0" aria-label="融合目标坐标">
+              <table><thead><tr><th>观测来源</th><th>横向 X</th><th>前向 Y</th></tr></thead>
+                <tbody><tr v-for="(o, i) in frame.obstacles" :key="i"><td>{{ sources[o.source] }}</td><td>{{ o.xM.toFixed(2) }} m</td><td>{{ o.yM.toFixed(2) }} m</td></tr></tbody>
+              </table>
+            </div>
+            <p v-else class="no-targets">{{ frame?.field ? '当前帧未发现障碍' : '等待有效观测' }}</p>
+          </section>
+        </aside>
+
+        <section v-if="mode === 'demo'" class="glass-panel replay-panel" aria-label="演示回放">
+          <div class="replay-command">
+            <div class="section-heading"><h2>演示回放</h2></div>
+            <button class="transport" @click="toggle"><i :class="playing ? 'pause' : 'play'" aria-hidden="true" />{{ playing ? '暂停' : demo && demo.step === demo.lastStep ? '重新播放' : '播放演示' }}</button>
+          </div>
+          <div class="replay-track">
+            <div class="stage-list" aria-label="演示阶段">
+              <button v-for="(step, i) in demo?.stages" :key="step" :aria-pressed="stageIndex === i" @click="seek(step)">
+                <i aria-hidden="true" />{{ stageLabels[i] }}
+              </button>
+            </div>
+            <div v-if="demo" class="scrubber">
+              <input type="range" min="0" :max="demo.lastStep" step="1" :value="demo.step" aria-label="演示进度"
+                :aria-valuetext="playbackSeconds(demo.step) + ' 秒'" @input="seek(Number(($event.target as HTMLInputElement).value))" />
+              <output>{{ playbackSeconds(demo.step) }} / {{ playbackSeconds(demo.lastStep) }} s</output>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
   </main>
 </template>
 
-<style scoped>
-.vehicle-shell {min-height:100vh; padding:clamp(16px,3vw,44px) max(4vw,calc((100vw - 1320px)/2)); color:#193b43; background:#edf4f2; font-family:'Microsoft YaHei','Segoe UI',sans-serif}
-header,.vehicle-title,nav,.card-title,.legend,.legend span {display:flex; align-items:center; gap:12px}
-header,.card-title,.legend {justify-content:space-between}
-header {margin-bottom:24px; flex-wrap:wrap}
-.vehicle-title img {width:44px;height:44px}
-.vehicle-title small {letter-spacing:.18em;color:#21736d;font-weight:700}
-h1 {font-size:clamp(24px,2.6vw,36px);line-height:1.25}
-h2 {font-size:18px}
-button {color:#235651;background:#f5f9f7;border:1px solid #b7d1c9;border-radius:6px;padding:7px 12px;cursor:pointer}
-button[aria-pressed=true],button.play {background:#17625e;color:white;border-color:#17625e}
-nav a {font-size:13px;color:#286a64}
-.vehicle-grid {display:grid;grid-template-columns:minmax(0,1.55fr) minmax(270px,1fr);gap:16px}
-.card {background:#fff;border:1px solid #cddfd8;border-radius:14px;padding:clamp(15px,2vw,26px)}
-.card-title {margin-bottom:12px}
-.card-title span,.legend,dt,.command p {font-size:14px;color:#44645e}
-.legend {margin:10px 0 0}.legend i {width:64px;height:7px;border-radius:4px;background:linear-gradient(90deg,#edf4ef,#a6d866,#e6af32,#d84c28)}
-.command {padding:16px 0;border-bottom:1px solid #dce7e1}
-.command strong {font-size:clamp(34px,4vw,58px);color:#21675c}
-.command[data-action=slow] strong {color:#97630e}
-.command[data-action=stop] strong {color:#ad4634}
-dl {margin-top:12px}.decision dl div {display:flex;justify-content:space-between;align-items:baseline;padding:9px 0}
-dd {font-size:22px;font-weight:650;font-variant-numeric:tabular-nums} dd small {font-size:13px}
-.counts dl {display:flex;gap:clamp(20px,4vw,56px)}
-.counts ul {padding-left:19px;margin-top:8px;color:#435e64;font-size:14px}
-.stages {display:flex;flex-wrap:wrap;gap:8px}
-.connection {margin:0 0 12px;color:#923f2e}
-@media(max-width:740px){.vehicle-grid {grid-template-columns:1fr}.vehicle-shell {padding:16px} .decision dl {display:flex;gap:14px;flex-wrap:wrap}.decision dl div {display:block}.command {padding:5px 0 10px}}
-</style>
+<style scoped src="./vehicle.css"></style>

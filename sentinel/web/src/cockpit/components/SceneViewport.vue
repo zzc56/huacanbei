@@ -8,6 +8,7 @@ import { sampleField } from '../../core/RealDataAdapter';
 import { useVideoSource } from '../composables/useVideoSource';
 import { riskGrid, riskParams } from '../core/risk';
 import { contourPath } from '../core/contours';
+import { paintFieldCell } from '../core/fieldColors';
 import {
   paintMap,
   paintMeasuredMap,
@@ -77,15 +78,6 @@ let cacheKey = '',
   contribution = new Path2D();
 const levels = Array.from({ length: 28 }, (_, i) => (i + 1) * 0.03);
 const measuredLevels = [.01, .02, .05, .1, .2, .3, .4, .5, .6, .75, .85, .95];
-// 与浅色城市底图配合的高对比色带，只在高场值核心使用暖红。
-const fieldPalette = [
-  [0, 147, 190, 196, 35],
-  [0.2, 131, 198, 181, 85],
-  [0.4, 166, 210, 180, 115],
-  [0.58, 222, 211, 155, 140],
-  [0.75, 211, 160, 128, 170],
-  [1, 184, 96, 78, 195],
-];
 function prepareMeasuredField() {
   const f=store.frame.riskField;
   if(hover.value?.worldX!==undefined && hover.value.worldY!==undefined)hover.value.value=sampleField(f,hover.value.worldX,hover.value.worldY);
@@ -100,8 +92,7 @@ function prepareMeasuredField() {
     const src=row*f.width+col,dst=(f.height-1-row)*f.width+col;
     if(!f.valid[src]||!Number.isFinite(f.values[src]))continue;
     const v=f.values[src];values[dst]=v;
-    const stop=fieldPalette.findIndex(e=>e[0]>=v),b=fieldPalette[Math.max(1,stop)],a=fieldPalette[Math.max(0,stop-1)],t=(v-a[0])/(b[0]-a[0]);
-    im.data.set([1,2,3,4].map(k=>Math.round(a[k]+(b[k]-a[k])*t)),dst*4);
+    paintFieldCell(im.data, dst * 4, v);
   }
   ctx.putImageData(im,0,0);paths=measuredLevels.map(v=>contourPath(values,f.width,f.height,v));
 }
@@ -133,11 +124,7 @@ onMounted(() => {
       const ctx = heat.getContext('2d')!,
         im = ctx.createImageData(128, 96);
       for (let i = 0; i < values.length; i++) {
-        const v = Math.max(0, Math.min(1, values[i]));
-        const stop = fieldPalette.findIndex((entry) => entry[0] >= v);
-        const b = fieldPalette[Math.max(1, stop)], a = fieldPalette[Math.max(0, stop - 1)];
-        const t = (v - a[0]) / (b[0] - a[0]);
-        im.data.set([1, 2, 3, 4].map((channel) => Math.round(a[channel] + (b[channel] - a[channel]) * t)), i * 4);
+        paintFieldCell(im.data, i * 4, values[i]);
       }
       ctx.putImageData(im, 0, 0);
     }
