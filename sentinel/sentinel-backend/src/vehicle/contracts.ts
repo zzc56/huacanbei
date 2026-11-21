@@ -1,6 +1,21 @@
-export interface VehicleObstacle {
+export interface GroundPoint {
   xM: number;
   yM: number;
+}
+
+export interface ScanPoint {
+  rangeM: number;
+  bearingDeg: number;
+}
+
+export interface SensorSample<T> {
+  capturedAtMs: number;
+  observations: T[];
+}
+
+type SensorView<T> = SensorSample<T> & { includedInFusion: boolean };
+
+export interface VehicleObstacle extends GroundPoint {
   source: 'camera' | 'lidar' | 'both';
 }
 
@@ -16,6 +31,10 @@ export interface VehicleField {
 }
 
 export interface VehicleResult {
+  observations: {
+    camera: SensorView<GroundPoint> | null;
+    lidar: SensorView<ScanPoint> | null;
+  };
   obstacles: VehicleObstacle[];
   field: VehicleField | null;
   corridorRisk: number | null;

@@ -76,6 +76,8 @@ test('演示按上一帧限速接近固定行人，并与上传的观测隔离',
     ['cruise', 0, 0, 0], ['slow', 1, 0, 1], ['slow', 1, 1, 1], ['stop', 1, 1, 1],
   ]);
   assert.deepEqual(shots.map(s => s.obstacles[0]?.source), [undefined, 'camera', 'both', 'both']);
+  assert.deepEqual(shots.map(s => [s.observations.camera?.observations.length, s.observations.lidar?.observations.length]),
+    [[0, 0], [1, 0], [1, 1], [1, 1]]);
   assert.equal(shots.at(-1)?.step, initial.lastStep);
   const next = await get(shots[1]!.step + 1);
   const travel = shots[1]!.closestForwardM! - next.closestForwardM!;
@@ -93,11 +95,23 @@ test('按位姿时间补偿雷达距离，丢弃不同步的观测，保留相�
     lidar: { capturedAtMs: 900, observations: [{ rangeM: 0.52, bearingDeg: 0 }] },
   };
   const aligned = evaluateVehicleRisk(frame, 1000);
+  assert.deepEqual(aligned.observations.camera, { ...frame.camera, includedInFusion: true });
+  assert.deepEqual(aligned.observations.lidar, { ...frame.lidar, includedInFusion: true });
   assert.deepEqual(aligned.obstacles.map(o => o.source), ['both', 'camera']);
   assert.ok(Math.abs(aligned.obstacles[0]!.yM - 0.50) < 1e-6);
   assert.equal(evaluateVehicleRisk(frame, 1300).field, null);
   frame.lidar!.capturedAtMs--;
-  assert.equal(evaluateVehicleRisk(frame, 1000).motion.speedLimitMps, 0);
+  const skewed = evaluateVehicleRisk(frame, 1000);
+  assert.equal(skewed.motion.speedLimitMps, 0);
+  assert.deepEqual(skewed.observations.lidar, { ...frame.lidar, includedInFusion: false });
+  assert.deepEqual(skewed.observations.camera, { ...frame.camera, includedInFusion: false });
+  const cameraOnly = evaluateVehicleRisk({ ...frame, lidar: null }, 1000);
+  assert.equal(cameraOnly.field, null);
+  assert.deepEqual(cameraOnly.observations, { camera: { ...frame.camera, includedInFusion: false }, lidar: null });
+  const radarOnly = evaluateVehicleRisk({ ...frame, camera: { capturedAtMs: 800, observations: [] },
+    lidar: { capturedAtMs: 1000, observations: [] } }, 1000);
+  assert.equal(radarOnly.observations.camera?.includedInFusion, false);
+  assert.equal(radarOnly.observations.lidar?.includedInFusion, true);
 });
 
 test('接口观测失效后清空热图，拒绝乱序帧、未来帧和非法数值', async t => {
@@ -119,6 +133,7 @@ test('接口观测失效后清空热图，拒绝乱序帧、未来帧和非法�
   t.mock.timers.tick(251);
   const stale = (await app.inject('/api/vehicle/frame')).json<VehicleResult>();
   assert.equal(stale.field, null);
+  assert.deepEqual(stale.observations, { camera: null, lidar: null });
   assert.equal(stale.motion.speedLimitMps, 0);
 });
 

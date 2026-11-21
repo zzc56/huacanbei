@@ -26,8 +26,8 @@
 .back-link { color: #245d78; text-underline-offset: 3px; }
 .vehicle-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.75fr) minmax(310px, 1fr);
-  grid-template-areas: 'field rail' 'replay replay';
+  grid-template-columns: minmax(205px, 0.95fr) minmax(0, 1.75fr) minmax(240px, 1fr);
+  grid-template-areas: 'sensors field rail' 'replay replay replay';
   gap: 16px;
 }
 .field-panel, .decision-panel, .observations, .replay-panel { padding: clamp(14px, 1.5vw, 23px); min-width: 0; }
@@ -37,7 +37,7 @@
 }
 .panel-top { color: #288b98; }
 .section-heading h2 { font-size: clamp(18px, 1.55vw, 23px); line-height: 1.35; }
-.status, .corridor-key, .color-key, .transport, .stage-list button, .inputs dt {
+.status, .corridor-key, .color-key, .transport, .stage-list button {
   display: inline-flex; align-items: center; gap: 8px;
 }
 .status { color: #156f72; font-size: 12px; font-weight: 650; white-space: nowrap; }
@@ -51,6 +51,7 @@
 .corridor-key i { width: 19px; border-top: 2px dashed #348e98; }
 .color-key i { width: clamp(56px, 7vw, 110px); height: 6px; border-radius: 4px; }
 .color-key small { font: 11px 'Segoe UI', sans-serif; }
+.vehicle-sensors { grid-area: sensors; display: grid; grid-auto-rows: 1fr; gap: 16px; min-width: 0; }
 .vehicle-rail { grid-area: rail; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .decision-panel { flex: 1 0 auto; }
 .decision-band {
@@ -66,8 +67,8 @@
 .decision-band p { font-size: 12px; margin-top: 4px; }
 .metrics { display: grid; grid-template-columns: 1fr 1fr; padding: 8px 0; }
 .metrics div + div { padding-left: 16px; border-left: 1px solid #bbd8e3; }
-.metrics dt, .risk-reading span, .inputs dt, .fused-count dt { color: #426a82; font-size: 13px; }
-.metrics dd, .risk-reading strong, .sensor-flow dd, .scrubber output {
+.metrics dt, .risk-reading span { color: #426a82; font-size: 13px; }
+.metrics dd, .risk-reading strong, .scrubber output {
   color: #112f4d; font-family: 'DIN Alternate', 'Segoe UI', Arial, sans-serif; font-variant-numeric: tabular-nums;
 }
 .metrics dd { font-size: clamp(27px, 2.9vw, 43px); font-style: italic; font-weight: 750; line-height: 1.25; }
@@ -76,18 +77,8 @@
 .risk-reading strong { font-size: 17px; }
 .decision-panel .risk-scale { margin: 6px 0 2px; }
 .observations { flex: 1 1 auto; }
-.sensor-flow { display: grid; grid-template-columns: minmax(0,1.5fr) 24px minmax(82px,1fr); align-items: center; margin: 15px 0 11px; }
-.inputs { display: grid; gap: 6px; }
-.inputs > div, .fused-count { border-radius: 7px; border: 1px solid #bbd9e2; background: #f7fcffcf; }
-.inputs > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; }
-.inputs dt { color: #235973; }
-.inputs svg { color: #198a95; }
-.inputs dd { font-weight: 750; font-size: 17px; }
-.merge-lines { position: relative; height: 38px; margin-right: 11px; border: solid #6daeb5; border-width: 1px 1px 1px 0; border-radius: 0 4px 4px 0; }
-.merge-lines:after { content: ''; position: absolute; top: 50%; left: 100%; width: 12px; border-top: 1px solid #6daeb5; }
-.fused-count { text-align: center; background: #dcf5f2; border-color: #8ac7c8; padding: 6px 3px; }
-.fused-count dt { color: #17696b; }
-.fused-count dd { font-size: 29px; font-style: italic; font-weight: 750; line-height: 1.2; }
+.observations .panel-top { margin-bottom: 12px; }
+.total { background: #def2ee; color: #11736c; padding: 2px 7px; border-radius: 4px; font-size: 12px; font-weight: 650; }
 .target-scroll { max-height: 112px; overflow: auto; }
 .target-scroll table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
 .target-scroll th, .target-scroll td { text-align: right; padding: 4px 2px; border-bottom: 1px solid #c5dfe7; }
@@ -110,9 +101,11 @@
 .scrubber output { white-space: nowrap; color: #3f6b81; font-size: 12px; }
 .connection { background: #fff0eb; padding: 8px 14px; border-left: 3px solid #b45a42; }
 .connection button { text-decoration: underline; color: #984932; }
-@media (max-width: 980px) {
+@media (max-width: 940px) {
   .vehicle-stage { gap: 12px; }
-  .vehicle-layout { grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); gap: 12px; }
+  .vehicle-layout { grid-template-columns: minmax(0, 1.45fr) minmax(240px, 1fr);
+    grid-template-areas: 'sensors sensors' 'field rail' 'replay replay'; gap: 12px; }
+  .vehicle-sensors { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
   .vehicle-rail { gap: 12px; }
   .replay-command { align-items: flex-start; flex-direction: column; gap: 8px; }
 }
@@ -125,10 +118,14 @@
   .vehicle-tabs > button { font-size: 14px; padding-inline: 9px; }
   .vehicle-tabs > button:after { bottom: 1px; }
   .back-link { margin-left: auto; font-size: 12px; }
-  .vehicle-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'field' 'replay' 'rail'; }
+  .vehicle-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'sensors' 'field' 'rail' 'replay'; }
+  .vehicle-sensors { gap: 8px; }
   .field-panel { min-height: 370px; }
   .replay-panel { grid-template-columns: minmax(0, 1fr); gap: 9px; }
   .replay-command { flex-direction: row; align-items: center; justify-content: space-between; }
   .stage-list { flex-wrap: wrap; justify-content: flex-start; }
   .stage-list button { gap: 4px; padding: 5px; font-size: 12px; }
+}
+@media (max-width: 460px) {
+  .vehicle-sensors { grid-template-columns: minmax(0, 1fr); }
 }

@@ -7,6 +7,7 @@ import UiIcon from './components/UiIcon.vue';
 import { fieldLegend } from './core/fieldColors';
 import './styles.css';
 import VehicleRiskMap from './components/VehicleRiskMap.vue';
+import VehicleSensorPanel from './components/VehicleSensorPanel.vue';
 
 const route = useRoute();
 const endpoint = new URL(import.meta.env.VITE_STREAM_URL || 'http://127.0.0.1:3001', window.location.href);
@@ -54,7 +55,7 @@ async function load(step = 0) {
     if (!response.ok) throw Error();
     const data = await response.json();
     if (controller.signal.aborted) return;
-    if (!data?.motion || !Array.isArray(data.obstacles)) throw Error();
+    if (!data?.motion || !data.observations || !Array.isArray(data.obstacles)) throw Error();
     frame.value = data;
     error.value = '';
     if (mode.value === 'input') {
@@ -102,9 +103,13 @@ onUnmounted(cancel);
       <p v-if="error" class="connection" role="alert">{{ error }} <button @click="load(demo?.step ?? 0)">重试</button></p>
 
       <div class="vehicle-layout">
-        <section class="glass-panel field-panel" aria-label="前方风险场">
+        <div class="vehicle-sensors">
+          <VehicleSensorPanel kind="camera" :result="frame" />
+          <VehicleSensorPanel kind="lidar" :result="frame" />
+        </div>
+        <section class="glass-panel field-panel" aria-label="融合风险场">
           <div class="panel-top">
-            <div class="section-heading"><h2>前方风险场</h2></div>
+            <div class="section-heading"><h2>融合风险场</h2></div>
             <span class="status" :class="{ muted: !frame?.field }"><i class="live-dot" />{{ observationStatus }}</span>
           </div>
           <div class="map-toolbar">
@@ -122,8 +127,8 @@ onUnmounted(cancel);
         </section>
 
         <aside class="vehicle-rail">
-          <section class="glass-panel decision-panel" aria-label="车辆决策">
-            <div class="panel-top"><div class="section-heading"><h2>车辆决策</h2></div><UiIcon name="car" /></div>
+          <section class="glass-panel decision-panel" aria-label="小车应执行的动作">
+            <div class="panel-top"><div class="section-heading"><h2>小车应执行的动作</h2></div><UiIcon name="car" /></div>
             <div class="decision-band" :data-action="frame?.motion.action">
               <span class="action-symbol"><UiIcon :name="frame?.motion.action === 'stop' ? 'risk' : frame?.motion.action === 'slow' ? 'pulse' : 'car'" :size="26" /></span>
               <div><strong>{{ frame ? actions[frame.motion.action] : '等待数据' }}</strong>
@@ -137,15 +142,9 @@ onUnmounted(cancel);
             <div class="risk-scale" aria-hidden="true"><b v-if="frame?.corridorRisk != null" :style="{ left: frame.corridorRisk * 100 + '%' }" /></div>
           </section>
 
-          <section class="glass-panel observations" aria-label="障碍观测">
-            <div class="panel-top"><div class="section-heading"><h2>障碍观测</h2></div><UiIcon name="layers" /></div>
-            <div class="sensor-flow">
-              <dl class="inputs">
-                <div><dt><UiIcon name="camera" :size="17" />固定摄像头</dt><dd>{{ frame?.cameraCount ?? '—' }}</dd></div>
-                <div><dt><UiIcon name="radar" :size="17" />车载雷达</dt><dd>{{ frame?.lidarCount ?? '—' }}</dd></div>
-              </dl>
-              <i class="merge-lines" aria-hidden="true" />
-              <dl class="fused-count"><dt>融合后目标</dt><dd>{{ frame?.field ? frame.obstacles.length : '—' }}</dd></dl>
+          <section class="glass-panel observations" aria-label="融合目标">
+            <div class="panel-top"><div class="section-heading"><h2>融合目标</h2></div>
+              <span class="total">{{ frame?.field ? frame.obstacles.length + ' 个目标' : '等待融合' }}</span>
             </div>
             <div v-if="frame?.obstacles.length" class="target-scroll" tabindex="0" aria-label="融合目标坐标">
               <table><thead><tr><th>观测来源</th><th>横向 X</th><th>前向 Y</th></tr></thead>
