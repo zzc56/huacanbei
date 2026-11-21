@@ -39,4 +39,15 @@ describe('vehicle cockpit',()=>{
     expect(color(1)[0]).toBeGreaterThan(color(1)[1]+100);
     expect(color(.3)[3]).toBe(255);
   });
+  it('keeps live preview boxes separate from simulated observations even when identifiers coincide',()=>{
+    const data=observation();
+    const scene=vehicleScene(data,true,origin,data.capture);
+    expect(scene.cameraFrame?.sequence).toBe(3);
+    expect(scene.targets.filter(t=>t.fusion)).toHaveLength(1);
+    expect(scene.targets.find(t=>t.fusion)?.camera).toBeUndefined();
+    const preview=scene.targets.find(t=>t.camera);
+    expect(preview?.camera?.trackId).toBe('V01');
+    expect(preview?.fusion).toBeUndefined();
+    expect(preview?.radar).toBeUndefined();
+  });
 });

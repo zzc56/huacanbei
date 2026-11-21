@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useSceneStore } from '../stores/scene';
 import AnimatedMetric from './AnimatedMetric.vue';
 import CockpitBrand from './CockpitBrand.vue';
-const props=defineProps<{vehicle?:boolean; statusText?:string; refreshHz?:number; requestMs?:number|null}>();
+const props=defineProps<{vehicle?:boolean; driving?:boolean; statusText?:string; refreshHz?:number; requestMs?:number|null}>();
 const emit=defineEmits<{toggle:[]}>();
 const store = useSceneStore(),
   now = ref(new Date()),
@@ -59,7 +59,7 @@ function keyboard(event: KeyboardEvent) {
     document.querySelector('.source-dialog')
   )
     return;
-  if (event.code === 'Space') {
+  if (event.code === 'Space' && !props.driving) {
     event.preventDefault();
     togglePlayback();
   }
@@ -98,7 +98,7 @@ onUnmounted(() => {
       <strong>{{ clock }}</strong
       ><span>{{ date }} <i>UTC+8</i></span>
     </div>
-    <div class="header-performance">
+    <div v-if="!driving" class="header-performance">
       <span
         >{{ vehicle?'刷新':'FPS' }} <b>{{ vehicle ? (refreshHz??0)+' Hz' : store.fps || '—' }}</b></span
       ><span
@@ -123,7 +123,7 @@ onUnmounted(() => {
     <div class="header-actions">
       <button
         class="icon-button"
-        @click="togglePlayback"
+        v-if="!driving" @click="togglePlayback"
         :aria-label="store.frame.source==='live'||vehicle&&!store.frame.vehicle?.demo ? (store.playing ? '冻结实时显示' : '继续实时显示') : (store.playing ? '暂停回放' : '继续回放')"
         :title="store.playing ? '暂停 · Space' : '继续 · Space'"
       >

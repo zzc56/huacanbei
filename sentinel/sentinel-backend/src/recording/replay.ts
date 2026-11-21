@@ -142,6 +142,7 @@ export function registerRecording(app: FastifyInstance, origins: Set<string>, op
     return reply.header('Content-Length', size).send(createReadStream(file));
   });
   app.server.on('upgrade', (req, socket, head) => {
+    if (req.url === '/api/vehicle/drive') return;
     if (req.url !== '/stream' || clients.size >= 32 || req.headers.origin && !origins.has(req.headers.origin)) { socket.destroy(); return; }
     wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
   });

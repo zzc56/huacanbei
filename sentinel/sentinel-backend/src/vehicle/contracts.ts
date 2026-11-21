@@ -61,3 +61,15 @@ export interface VehicleDemoResult extends VehicleResult {
   tickMs: number;
   stages: number[];
 }
+
+export type DriveDirection = 'forward' | 'reverse' | 'stop';
+export interface DriveSnapshot {
+  frame: VehicleResult;
+  preview?: VehicleResult['capture'];
+  direction: DriveDirection;
+  requestedMps: number;
+  limitMps: number;
+  speedMps: number;
+  travelM: number;
+  timedOut: boolean;
+}

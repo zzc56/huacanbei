@@ -111,6 +111,7 @@ export function registerLive(app: FastifyInstance, origins: Set<string>, camera:
   app.get('/api/live/status', async () => packet().live);
   app.get('/api/live/frame', async () => packet());
   app.server.on('upgrade', (req, socket, head) => {
+    if (req.url === '/api/vehicle/drive') return;
     if (req.url !== '/stream' || clients.size >= 32 || req.headers.origin && !origins.has(req.headers.origin)) { socket.destroy(); return; }
     server.handleUpgrade(req, socket, head, ws => server.emit('connection', ws, req));
   });

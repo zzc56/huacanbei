@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import type { VehicleResult } from '../../../../sentinel-backend/src/vehicle/contracts';
 import UiIcon from './UiIcon.vue';
 
-const props = defineProps<{ kind: 'camera' | 'lidar'; result: VehicleResult | null }>();
+const props = defineProps<{ kind: 'camera' | 'lidar'; result: VehicleResult | null; simulated?:boolean }>();
 const isCamera = computed(() => props.kind === 'camera');
 const sample = computed(() => props.result?.observations?.[props.kind]);
 const cameraPoints = computed(() => props.result?.observations?.camera?.observations ?? []);
@@ -37,10 +37,10 @@ const radarDots = computed(() => scan.value.map(p => {
   <section class="glass-panel sensor-panel" :class="kind" :aria-label="title + '观测'">
     <header>
       <div class="section-heading"><h2>{{ title }}</h2></div>
-      <span class="count">{{ countLabel }}</span>
+      <span class="count">{{ simulated ? (sample ? (isCamera ? '模拟 · ' : '')+'当前帧 '+count+' 个目标' : '未连接') : countLabel }}</span>
     </header>
     <div class="plot-caption"><span><UiIcon :name="isCamera ? 'camera' : 'radar'" :size="15" />
-      {{ isCamera ? ($slots.camera ? '摄像画面 · 标定位置见下方' : '场地坐标 · 俯视') : '车身方位 · 俯视' }}</span>
+      {{ simulated ? (isCamera ? '模拟视觉观测 · 场地坐标' : '模拟雷达 · 融合前点迹') : isCamera ? ($slots.camera ? '摄像画面 · 标定位置见下方' : '场地坐标 · 俯视') : '车身方位 · 俯视' }}</span>
       <span v-if="sample && !sample.includedInFusion" class="unused">未参与融合</span>
     </div>
     <slot v-if="$slots.camera && isCamera" name="camera" />
@@ -67,6 +67,7 @@ const radarDots = computed(() => scan.value.map(p => {
         <text x="133" y="124" text-anchor="middle">外圈 {{ radarRange }} m</text></g>
       <g v-for="(p, i) in radarDots" :key="i" :transform="'translate(' + p.x + ',' + p.y + ')'">
         <circle r="6.5" class="mark" /><circle r="2.7" class="dot" />
+        <text v-if="simulated" x="9" y="-4" class="axis-text">L{{ i+1 }}</text>
       </g>
     </svg>
     <div v-if="count" class="sensor-targets" tabindex="0" :aria-label="title + '目标清单'">

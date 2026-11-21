@@ -5,6 +5,7 @@ import { PipelineService } from './services/pipeline.service.js';
 import { registerRecording } from './recording/replay.js';
 import { registerLive, type LiveOptions } from './live/service.js';
 import { registerVehicleRisk } from './vehicle/service.js';
+import { registerSimulatedDrive } from './vehicle/drive.js';
 import { LiveCamera, registerCameraFrames } from './live/camera.js';
 
 export function buildApp(mode = process.env['SOURCE_MODE'] ?? 'recording', liveOptions: LiveOptions = {}) {
@@ -18,6 +19,7 @@ export function buildApp(mode = process.env['SOURCE_MODE'] ?? 'recording', liveO
   });
   const camera = mode === 'vehicle' || mode === 'live' ? new LiveCamera(liveOptions.camera) : undefined;
   registerVehicleRisk(app, camera);
+  registerSimulatedDrive(app, origins, camera);
   if (camera) {
     registerCameraFrames(app, camera);
     app.addHook('onClose', async () => camera.close());

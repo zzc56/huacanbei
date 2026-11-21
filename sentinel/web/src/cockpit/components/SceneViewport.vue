@@ -23,7 +23,8 @@ import {
   type PlotBounds,
 } from '../renderers/lightScene';
 import UiIcon from './UiIcon.vue';
-const props = defineProps<{ mode: ViewMode; targets: Target[]; time: number; compact?: boolean; minimap?: boolean }>();
+const props = defineProps<{ mode: ViewMode; targets: Target[]; time: number; compact?: boolean; minimap?: boolean; drivePreview?:boolean }>();
+const emit = defineEmits<{ previewOpen:[] }>();
 const store = useSceneStore(),
   canvas = ref<HTMLCanvasElement | null>(null),
   video = ref<HTMLVideoElement | null>(null);
@@ -357,6 +358,11 @@ function inspect(event: MouseEvent) {
       ><span>{{ store.selectedId }}<i />{{ vehicle && !vehicle.demo ? new Date(store.frame.timestamp).toLocaleTimeString('zh-CN') : ((store.frame.replay?.positionMs ?? (store.frame.live ? store.frame.timestamp-store.frame.live.startedAt : store.frame.timestamp)) / 1000).toFixed(1)+' s' }}</span>
     </div>
     <div v-if="mode === 'camera' && compact" class="scene-tools">
+      <template v-if="drivePreview">
+        <input ref="localFile" type="file" accept="image/*,video/*" hidden @change="previewFile" />
+        <button @click="emit('previewOpen'); localFile?.click()">本地照片／录像</button>
+        <button v-if="externalPreview" @click="openSource('mock')">返回摄像头</button>
+      </template>
       <span v-if="fillViewport">等比裁切</span>
       <button @click="fillViewport = !fillViewport">{{ fillViewport ? '完整画面' : '铺满画面' }}</button>
     </div>

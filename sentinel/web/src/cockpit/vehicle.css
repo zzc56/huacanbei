@@ -50,6 +50,17 @@
 .vehicle-platform :deep(.view-camera .dialog-backdrop) { z-index:6; }
 .preview-source {position:absolute;z-index:3;top:6px;left:6px;padding:2px 5px;border-radius:3px;font-size:11px;color:#074456;background:#ecfaffed;}
 .vehicle-layout.detail-layout { display:flex; flex-direction:column; }
+.drive-keys {grid-template-columns:auto 1fr auto !important;}
+.drive-keys .key-groups,.key-groups > span {display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.drive-keys .key-groups {gap:clamp(12px,2vw,28px);color:#385f72}
+.drive-keys kbd {display:inline-grid;place-items:center;min-width:26px;height:26px;padding:0 5px;background:#f7fdff;border:1px solid #9cbfc9;border-bottom-width:3px;border-radius:5px;color:#174b64;font:bold 14px 'Segoe UI',sans-serif}
+.drive-keys kbd.pressed {color:white;background:#127a80;border-color:#075962}
+.drive-modes button:disabled {opacity:.65;cursor:default}
+.vehicle-camera.camera-expanded {position:fixed;inset:6vh 5vw;z-index:40;padding:12px;background:#e1eff1;border-radius:12px;box-shadow:0 0 0 150vmax #15383fd9}
+.drive-layout .vehicle-camera .preview-source {max-width:calc(100% - 46px)}
+.camera-offline {position:absolute;inset:1px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding-bottom:20px;background:linear-gradient(135deg,#eff7f9,#e0edef);border-radius:7px;color:#557880;font-size:13px;pointer-events:none}
+.vehicle-camera:has(.camera-offline) :deep(.scene-tools) {z-index:4}
+@media(max-width:700px){.drive-keys{grid-template-columns:1fr auto !important}.drive-keys .key-groups{grid-row:2;grid-column:1/-1}.vehicle-navigation .view-tabs{overflow-x:auto}.vehicle-navigation .view-tabs button{white-space:nowrap}}
 .vehicle-detail :deep(.monitor-layout) { grid-template-columns:clamp(240px,24vw,380px) minmax(0,1fr); margin:0; gap:12px; }
 .vehicle-detail :deep(.monitor-content) { grid-template-columns:minmax(0,1fr) clamp(180px,17vw,270px); }
 .vehicle-detail :deep(.monitor-main), .vehicle-detail :deep(.target-inspector) { padding:14px; min-width:0; }

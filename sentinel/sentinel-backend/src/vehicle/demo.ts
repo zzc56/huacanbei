@@ -4,7 +4,7 @@ const tickMs = 100;
 
 // One stationary pedestrian at (2, 1) on the ground. The car starts at (1, 1)
 // and faces +X. Only the car moves, using the previous frame's speed limit.
-function makeFrame(travelM: number, speedMps: number, capturedAtMs: number): VehicleFrame {
+export function makePedestrianFrame(travelM: number, speedMps: number, capturedAtMs: number): VehicleFrame {
   const distanceM = 1 - travelM;
   return {
     pose: { xM: 1 + travelM, yM: 1, headingDeg: 90, speedMps, capturedAtMs },
@@ -19,7 +19,7 @@ export function buildVehicleDemo() {
   let travelM = 0, speed = vehicleLimits.cruiseLimitMps, lastStage = '';
   for (let step = 0; step <= 150; step++) {
     const time = step * tickMs;
-    const frame = makeFrame(travelM, speed, time);
+    const frame = makePedestrianFrame(travelM, speed, time);
     const result = evaluateVehicleRisk(frame, time);
     frames.push(frame);
     const stage = result.motion.action + '/' + (result.obstacles[0]?.source ?? 'clear');
