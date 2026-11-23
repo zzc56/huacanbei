@@ -1,5 +1,27 @@
 import { expect,it } from 'vitest';
+import { createPinia } from 'pinia';
+import { useSceneStore } from '../cockpit/stores/scene';
 import { RealDataAdapter } from './RealDataAdapter';
+it('实时总览仅在摄像头推送有效画面时可进入，丢失画面后恢复等待',()=>{
+  const store=useSceneStore(createPinia());
+  const now=Date.now(),adapter=new RealDataAdapter('http://127.0.0.1:3001');
+  const packet={type:'live_frame',timestamp:now,radar:[],snapshot:null,
+    live:{radar:{state:'streaming'},camera:{state:'streaming'}}};
+  const vision={sequence:1,captured_utc:new Date(now).toISOString(),width:800,height:448,
+    imageUrl:'/api/live/camera/1.jpg',detections:[]};
+
+  store.connection='connected';
+  store.frame=adapter.parse({...packet,vision:null})!;
+  expect(store.liveCameraReady).toBe(false);
+  store.frame=adapter.parse({...packet,vision})!;
+  expect(store.liveCameraReady).toBe(true);
+  store.frame=adapter.parse({...packet,vision:null,live:{...packet.live,camera:{state:'stale'}}})!;
+  expect(store.liveCameraReady).toBe(false);
+  store.frame=adapter.parse({...packet,vision:{...vision,sequence:2}})!;
+  expect(store.liveCameraReady).toBe(true);
+  store.connection='disconnected';
+  expect(store.liveCameraReady).toBe(false);
+});
 it('实时硬件帧保留实测运动量与状态，不混入录像、风险或回放进度',()=>{
   const now=Date.now(),adapter=new RealDataAdapter();
   const envelope={type:'live_frame',timestamp:now,snapshot:null,vision:null,

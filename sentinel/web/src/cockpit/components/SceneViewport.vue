@@ -48,7 +48,7 @@ const worldBounds = computed<PlotBounds | undefined>(() => {
   if (!measured.value) return;
   if (props.mode === 'radar') {
     const r = store.frame.radarRange ?? 50;
-    return { xMin: -r, xMax: r, yMin: forwardRadar.value ? -r * .05 : -r, yMax: r };
+    return { xMin: -r, xMax: r, yMin: forwardRadar.value ? -r * (props.minimap ? .14 : .05) : -r, yMax: r };
   }
   return store.frame.bounds ?? {xMin:-18,xMax:18,yMin:0,yMax:47};
 });
@@ -185,7 +185,7 @@ useCanvas(canvas, (ctx, w, h) => {
         const v=video.value;
         const image=v && v.readyState>=2 && !v.seeking && Math.abs(v.currentTime-(ready.meta.videoTimeSeconds??-1))<.06 ? v : ready.image;
         ctx.drawImage(image,box.x,box.y,box.w,box.h);
-        hits=cameraTargets(ctx,w,h,ready.targets,store.selectedId,false,box);
+        hits=cameraTargets(ctx,w,h,ready.targets,store.selectedId,false,box,ready.meta.annotated!==true);
       }else{
         box=imageBox(store.frame.cameraFrame?.width??800,store.frame.cameraFrame?.height??448,w,h);
         hits=cameraTargets(ctx,w,h,props.targets,store.selectedId,false,box);

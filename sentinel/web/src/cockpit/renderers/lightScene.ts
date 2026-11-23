@@ -410,6 +410,7 @@ export function cameraTargets(
   selectedId: string,
   mock: boolean,
   box = { x: 0, y: 0, w, h },
+  showClassConfidence = false,
 ): Hit[] {
   const hits: Hit[] = [];
   for (const t of [...targets].sort(
@@ -460,21 +461,38 @@ export function cameraTargets(
           c.fillRect(x + bw * sx, y + bh * sy, bw * 0.08, bh * 0.15);
         }
     }
-    c.strokeStyle = color + (selected ? 'ff' : 'b0');
-    c.lineWidth = selected ? 1.8 : 1.1;
-    c.strokeRect(x - pad, y - pad, bw + pad * 2, bh + pad * 2);
-    const k = Math.min(11, bw * 0.35);
-    for (const [cx, cy, dx, dy] of [
-      [x - pad, y - pad, 1, 1],
-      [x + bw + pad, y - pad, -1, 1],
-      [x - pad, y + bh + pad, 1, -1],
-      [x + bw + pad, y + bh + pad, -1, -1],
-    ]) {
-      line(c, cx, cy, cx + k * dx, cy, color, selected ? 2 : 1.3);
-      line(c, cx, cy, cx, cy + k * dy, color, selected ? 2 : 1.3);
+    const category = t.camera.class;
+    const name = category === 'car' ? 'car'
+      : ['bicycle', 'motorcycle', 'bike'].includes(category) ? 'bike' : undefined;
+    if (showClassConfidence && name) {
+      // Match the original recording's overlaid class, confidence, and thin cyan rectangle.
+      c.save();
+      c.strokeStyle = '#29afe0';
+      c.lineWidth = selected ? 1.8 : 1;
+      c.strokeRect(x, y, bw, bh);
+      const size = Math.max(10, Math.min(19, 16 * box.w / 800));
+      c.font = `400 ${size}px "Segoe UI", sans-serif`;
+      c.textAlign = 'left';
+      c.fillStyle = c.strokeStyle;
+      const label = `${name} ${Math.round(t.camera.confidence * 100)}%`;
+      const labelX = Math.max(0, Math.min(w - c.measureText(label).width, x));
+      c.fillText(label, labelX, Math.max(size, y - 4));
+      c.restore();
+    } else {
+      c.strokeStyle = color + (selected ? 'ff' : 'b0');
+      c.lineWidth = selected ? 1.8 : 1.1;
+      c.strokeRect(x - pad, y - pad, bw + pad * 2, bh + pad * 2);
+      const k = Math.min(11, bw * 0.35);
+      for (const [cx, cy, dx, dy] of [
+        [x - pad, y - pad, 1, 1],
+        [x + bw + pad, y - pad, -1, 1],
+        [x - pad, y + bh + pad, 1, -1],
+        [x + bw + pad, y + bh + pad, -1, -1],
+      ]) {
+        line(c, cx, cy, cx + k * dx, cy, color, selected ? 2 : 1.3);
+        line(c, cx, cy, cx, cy + k * dy, color, selected ? 2 : 1.3);
+      }
     }
-    // Only boxes are drawn. Keep selection within the visible box, without
-    // the previous label's large invisible hit region covering nearby targets.
     const left = Math.max(0, x - pad - 4), top = Math.max(0, y - pad - 4);
     const right = Math.min(w, x + bw + pad + 4), bottom = Math.min(h, y + bh + pad + 4);
     hits.push({ id: t.id, x: left, y: top, w: right - left, h: bottom - top });
@@ -654,3 +672,4 @@ export function radarOverlay(c: CanvasRenderingContext2D, w: number, h: number, 
   text(c, 'EGO', cx, cy + 23, teal, 10, 'center');
   c.restore();
 }
+

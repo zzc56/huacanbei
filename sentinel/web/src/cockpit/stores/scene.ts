@@ -8,6 +8,10 @@ export const useSceneStore = defineStore('cockpit', () => {
   const seekRequest = ref<{ positionMs: number; token: number } | null>(null);
   const playing = ref(true);
   const connection = ref<ConnectionState>('connecting');
+  const liveCameraReady = computed(() =>
+    connection.value === 'connected' && frame.value.source === 'live' &&
+    frame.value.live?.camera.state === 'streaming' && !!frame.value.cameraFrame?.imageUrl,
+  );
   const fps = ref(0);
   const latency = ref(0);
   const cameraLatencyMs = ref<number|null>(null);
@@ -28,6 +32,7 @@ export const useSceneStore = defineStore('cockpit', () => {
     selectedId,
     playing,
     connection,
+    liveCameraReady,
     fps,
     latency,
     cameraLatencyMs,

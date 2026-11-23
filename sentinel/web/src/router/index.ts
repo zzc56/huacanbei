@@ -11,6 +11,8 @@ import FusionPage from '@/views/console/FusionPage.vue';
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
+    { path: '/history', name: 'history', component: HomePage },
+    { path: '/live/waiting', redirect: '/?mode=live' },
     { path: '/', name: 'home', component: HomePage },
     { path: '/tech', name: 'tech', component: TechPage },
     { path: '/demo', name: 'demo', component: DemoPage },
@@ -23,4 +25,12 @@ const router = createRouter({
   ]
 });
 
+router.beforeEach(to => {
+  if (to.path === '/' && !to.query.mode) {
+    window.location.replace(import.meta.env.BASE_URL + 'showcase/index.html');
+    return false;
+  }
+});
+
 export default router;
+

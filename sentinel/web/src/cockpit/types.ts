@@ -37,7 +37,7 @@ export interface Frame {
     fusion: { state: string; message: string };
   };
   riskField?: ScalarField;
-  cameraFrame?: { sequence: number; width: number; height: number; timestamp: number; imageUrl?: string; videoUrl?: string; videoTimeSeconds?: number };
+  cameraFrame?: { sequence: number; width: number; height: number; timestamp: number; imageUrl?: string; videoUrl?: string; videoTimeSeconds?: number; annotated?: boolean };
   replay?: { positionMs: number; durationMs: number; ended: boolean };
   recordingCounts?: { video: number; detections: number; radar: number; fusion: number };
   bounds?: WorldBounds;

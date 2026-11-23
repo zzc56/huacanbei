@@ -11,8 +11,8 @@ defineProps<{ targets: Target[]; time: number }>();
 defineEmits<{ open: [mode: ViewMode] }>();
 const store = useSceneStore();
 const panels = [
-  { mode: 'camera', title: '摄像头感知', subtitle: 'CAMERA / OBJECT DETECTION', index: '02', icon: 'camera' },
-  { mode: 'risk', title: '风险场', subtitle: 'RISK / SPATIAL DISTRIBUTION', index: '03', icon: 'layers' },
+  { mode: 'camera', title: '现场画面', icon: 'camera' },
+  { mode: 'risk', title: '风险场', icon: 'layers' },
 ] as const;
 const radarCount = computed(() => store.frame.targets.filter(t => t.radar).length);
 const cameraCount = computed(() => store.frame.targets.filter(t => t.camera).length);
@@ -42,33 +42,21 @@ const fieldNote = computed(() => store.frame.live?.fusion.message ?? store.frame
 
 <template>
   <div class="overview-panel">
-    <div class="overview-heading">
-      <div><span class="overview-kicker">MULTIMODAL OVERVIEW</span><h2>多模态感知总览</h2></div>
-      <p>左侧摄像头 / 雷达小地图 · 右侧风险场 · 点击识别框查看观测信息</p>
-    </div>
     <div class="overview-grid">
       <section v-for="panel in panels" :key="panel.mode" class="overview-card" :class="'overview-' + panel.mode" :aria-label="panel.title + '总览'">
         <header class="overview-card-header">
-          <span class="overview-number">{{ panel.index }}</span>
-          <div class="overview-card-title"><h3><UiIcon :name="panel.icon" :size="19" />{{ panel.title }}</h3><small>{{ panel.subtitle }}</small></div>
+          
+          <div class="overview-card-title"><h3><UiIcon :name="panel.icon" :size="19" />{{ panel.mode === 'camera' && store.frame.source === 'recording' ? '录像画面' : panel.title }}</h3></div>
           <span class="overview-state" :class="{ ready: status(panel.mode).ready }"><i />{{ status(panel.mode).text }}</span>
           <button class="overview-expand" :aria-label="'展开' + panel.title" @click="$emit('open', panel.mode)"><UiIcon name="focus" :size="19" /></button>
         </header>
         <div class="overview-visual">
           <SceneViewport :mode="panel.mode" :targets="targets" :time="time" compact />
-          <aside v-if="panel.mode === 'camera'" class="radar-minimap" aria-label="雷达小地图">
-            <header class="minimap-header">
-              <h3><UiIcon name="radar" :size="16" />雷达小地图</h3>
-              <span class="overview-state" :class="{ ready: status('radar').ready }"><i />{{ status('radar').text }}</span>
-              <button class="overview-expand" aria-label="展开雷达探测" title="展开雷达探测" @click="$emit('open', 'radar')"><UiIcon name="focus" :size="17" /></button>
-            </header>
-            <SceneViewport mode="radar" :targets="targets" :time="time" compact minimap />
-            <footer class="minimap-footer"><span>目标 <b>{{ radarCount }}</b></span><span>半径 {{ store.frame.radarRange ?? '—' }} m</span></footer>
-          </aside>
+
         </div>
         <footer class="overview-card-footer">
           <template v-if="panel.mode === 'camera'">
-            <span>视觉目标 <b>{{ cameraCount }}</b></span>
+            <span>视觉目标 <b>{{ store.frame.cameraFrame ? cameraCount : '—' }}</b></span>
             <span>画面尺寸 <b>{{ store.frame.cameraFrame ? store.frame.cameraFrame.width + ' × ' + store.frame.cameraFrame.height : '—' }}</b></span>
             <span v-if="store.frame.source === 'live'" title="从本机解码完成到当前画面显示的耗时，不含摄像头内部编码及取流耗时">本机画面延迟 <b>{{ store.cameraLatencyMs ?? '—' }} <small>ms</small></b></span>
             <span>帧序号 <b>{{ store.frame.cameraFrame?.sequence ?? '—' }}</b></span>
@@ -80,9 +68,18 @@ const fieldNote = computed(() => store.frame.live?.fusion.message ?? store.frame
           </template>
         </footer>
       </section>
+          <aside class="radar-minimap" aria-label="雷达探测">
+            <header class="minimap-header">
+              <h3><UiIcon name="radar" :size="16" />雷达探测</h3>
+              <span class="overview-state" :class="{ ready: status('radar').ready }"><i />{{ status('radar').text }}</span>
+              <button class="overview-expand" aria-label="展开雷达探测" title="展开雷达探测" @click="$emit('open', 'radar')"><UiIcon name="focus" :size="17" /></button>
+            </header>
+            <SceneViewport mode="radar" :targets="targets" :time="time" compact minimap />
+            <footer class="minimap-footer"><span>目标 <b>{{ store.frame.source === 'live' && store.frame.live?.radar.state !== 'streaming' ? '—' : radarCount }}</b></span><span>半径 {{ store.frame.radarRange ?? '—' }} m</span></footer>
+          </aside>
     </div>
-    <div class="overview-bottom">
-      <section class="overview-selection" aria-label="总览选中目标">
+    <div class="overview-bottom" :class="{compact: !store.selected}">
+      <section v-if="store.selected" class="overview-selection" aria-label="总览选中目标">
         <div class="overview-selection-title"><UiIcon name="focus" /><div><small>当前选中目标</small><strong>{{ store.selected?.id ?? '未选择目标' }}</strong></div><span>{{ store.selected ? measurement.source : '点击任一画面的目标' }}</span></div>
         <dl>
           <div><dt>实测距离</dt><dd>{{ store.selected?.radar?.range.toFixed(1) ?? '—' }} <small>m</small></dd></div>
@@ -164,4 +161,23 @@ const fieldNote = computed(() => store.frame.live?.fusion.message ?? store.frame
 .overview-selection dt { display:inline; font-size:10px; color:#668a9c; }.overview-selection dd { display:inline; margin:0 0 0 8px; font:700 16px Arial,sans-serif; color:#173e59; }.overview-selection dd small { font-size:10px; font-weight:400; color:#628497; }
 .overview-basis h3 { display:flex; gap:7px; align-items:center; font-size:13px; color:#244d65; }
 .overview-basis p { font-size:11px; color:#507d8d; margin-top:4px; line-height:1.45; }.overview-basis > small { display:none; }
+
+.overview-panel { padding:16px; gap:12px; }
+.overview-heading h2 { color:#e5f3f7; font-size:23px; font-style:normal; }
+.overview-heading p { color:#a2bbc8; }
+.overview-grid { grid-template-columns:minmax(0,1.62fr) minmax(0,1fr); grid-template-rows:1fr 1fr; gap:12px; }
+.overview-camera { grid-row:1 / 3; grid-column:1; }
+.overview-risk { grid-row:2; grid-column:2; }
+.overview-card,.radar-minimap { background:#122735; border:1px solid #355363; box-shadow:none; border-radius:10px; padding:0 10px; }
+.radar-minimap { position:static; grid-column:2; grid-row:1; width:auto; height:auto; max-width:none; max-height:none; min-height:0; }
+.overview-card-header,.minimap-header { min-height:40px; height:40px; }
+.overview-card-title h3,.minimap-header h3 { color:#e8f6fb; font-size:17px; }
+.overview-state,.overview-state.ready { color:#a3eadc; }
+.overview-expand { color:#a8ced6; }
+.overview-card-footer > span,.minimap-footer,.overview-legend small { color:#aec3cf; }
+.overview-card-footer b,.minimap-footer b { color:#edf9ff; }
+.overview-bottom { gap:12px; }
+.overview-selection,.overview-basis { background:#172b38; border-color:#344d5b; }
+.overview-selection-title strong,.overview-selection dd,.overview-basis h3 { color:#dcecf3; }
+.overview-selection-title small,.overview-selection-title > span,.overview-selection dt,.overview-basis p { color:#b0c8d3; }
 </style>

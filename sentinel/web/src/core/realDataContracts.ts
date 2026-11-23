@@ -37,6 +37,7 @@ export interface RecordedEnvelope {
   vision:RecordedVision|null; radar:RecordedRadar[];
   replay:{positionMs:number;durationMs:number;ended:boolean};
   context:{source:'recording';videoUrl:string|null;northCalibrated:boolean;radarRange:number;
+    camera?:{annotated:boolean};
     dispatchHz:number;counts:{video:number;detections:number;radar:number;fusion:number};
     bounds:{xMin:number;xMax:number;yMin:number;yMax:number}};
 }

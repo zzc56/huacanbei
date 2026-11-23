@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useSceneStore } from './stores/scene';
 import { useScene } from './composables/useScene';
 import StatusBar from './components/StatusBar.vue';
@@ -8,9 +8,19 @@ import SceneViewport from './components/SceneViewport.vue';
 import OverviewPanel from './components/OverviewPanel.vue';
 import UiIcon from './components/UiIcon.vue';
 import type { ViewMode } from './renderers/lightScene';
+import type { MonitorSource } from './services/stream';
 import './styles.css';
+import './field-console.css';
+const DrivingDemo = defineAsyncComponent(() => import('./components/DrivingDemo.vue'));
+const LiveOverview = defineAsyncComponent(() => import('./components/LiveOverview.vue'));
+const props = defineProps<{ source: MonitorSource }>();
+const emit = defineEmits<{ changeSource: [source: MonitorSource] }>();
+const sources = [
+  { id: 'live', label: '实时连接' },
+  { id: 'recording', label: '历史回放' },
+] as const;
 const store = useSceneStore(),
-  { renderTargets, time } = useScene();
+  { renderTargets, time } = useScene(props.source);
 const mode = ref<ViewMode | 'overview'>('overview'),
   filter = ref('all'),
   scale = ref(1),
@@ -94,11 +104,19 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                 <UiIcon
                   :name="tab.id === 'overview' ? 'layers' : tab.id === 'camera' ? 'camera' : tab.id === 'radar' ? 'radar' : 'risk'"
                 /><span>{{ tab.name }}</span
-                ><small>{{ tab.en }}</small>
+                >
               </button>
             </div>
             <div class="view-indicator">
-              <i class="live-dot" /> {{ store.frame.source==='recording' ? '实测回放' : store.playing ? '实时感知' : '观测暂停' }}
+              <div class="source-modes" role="group" aria-label="数据模式">
+                <button
+                  v-for="item in sources"
+                  :key="item.id"
+                  type="button"
+                  :aria-pressed="source === item.id"
+                  @click="emit('changeSource', item.id)"
+                >{{ item.label }}</button>
+              </div>
               <template v-if="store.frame.replay">
                 <input type="range" aria-label="实测回放进度" min="0" :max="store.frame.replay.durationMs" step="100" :value="store.frame.replay.positionMs" @change="store.seek(Number(($event.target as HTMLInputElement).value))" style="width:130px;accent-color:#008e8c" />
                 <span>{{ (store.frame.replay.positionMs/1000).toFixed(1) }} / {{ (store.frame.replay.durationMs/1000).toFixed(1) }} s</span>
@@ -106,7 +124,12 @@ onUnmounted(() => window.removeEventListener('resize', resize));
               </template>
             </div>
           </div>
-          <OverviewPanel v-if="mode === 'overview'" :targets="renderTargets" :time="time" @open="mode = $event" />
+          <template v-if="mode === 'overview'">
+            <DrivingDemo v-if="source === 'live' && !store.liveCameraReady && store.connection !== 'mock'" />
+            <LiveOverview v-else-if="source === 'live' && store.liveCameraReady"
+              :targets="renderTargets" :time="time" @open="mode = $event" />
+            <OverviewPanel v-else :targets="renderTargets" :time="time" @open="mode = $event" />
+          </template>
           <div v-else class="monitor-content">
             <SceneViewport :mode="mode" :targets="renderTargets" :time="time" />
             <aside class="monitor-rail">
@@ -257,11 +280,11 @@ onUnmounted(() => window.removeEventListener('resize', resize));
         </section>
       </div>
       <footer class="system-footer">
-        <span><i class="live-dot" />感知 · 融合 · 风险评估</span
+        <span><i class="live-dot" />SENTINEL</span
         ><span
           >{{ store.frame.northCalibrated===false ? '传感器局部 XY · 北向待现场标定' : '本地 ENU · 正北 0°' }} <i />
           {{ store.frame.source==='recording' ? '历史实测 · 主机 UTC 对齐' : store.connection === 'mock' ? '模拟数据 · 10 Hz' : '实时接口数据' }}</span
-        ><b>SENTINEL <em>/</em> MULTIMODAL INTELLIGENCE</b>
+        >
       </footer>
     </div>
   </main>

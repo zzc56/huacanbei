@@ -204,7 +204,8 @@ export class RealDataAdapter {
     }
     if(['video','detections','radar','fusion'].every(key=>numeric(counts[key])!==undefined))frame.recordingCounts={video:Number(counts.video),detections:Number(counts.detections),radar:Number(counts.radar),fusion:Number(counts.fusion)};
     if(numeric(vision.sequence)!==undefined)frame.cameraFrame={sequence:Number(vision.sequence),width,height,timestamp:timestamp(vision.captured_utc),
-      imageUrl:this.url(vision.imageUrl),videoUrl:this.url(context.videoUrl),videoTimeSeconds:numeric(vision.videoTimeSeconds)};
+      imageUrl:this.url(vision.imageUrl),videoUrl:this.url(context.videoUrl),videoTimeSeconds:numeric(vision.videoTimeSeconds),
+      annotated:obj(context.camera).annotated===true ? true : obj(context.camera).annotated===false ? false : undefined};
     if(field && Number.isFinite(reference))field.timestamp=reference;
     return this.trails(frame);
   }

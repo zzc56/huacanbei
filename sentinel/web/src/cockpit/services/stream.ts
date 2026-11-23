@@ -81,12 +81,14 @@ export class MockStream implements DataStream {
     clearInterval(this.timer);
   }
 }
-/** Explicit mock mode only. The default path is the measured recording service. */
 export { WebSocketStream, ApiStream } from '../../core/RealDataStream';
 import { WebSocketStream, ApiStream } from '../../core/RealDataStream';
-export function createStream(): DataStream {
+export type MonitorSource = 'live' | 'recording';
+export function createStream(source: MonitorSource = 'live'): DataStream {
   const env = import.meta.env;
   if (env.VITE_STREAM_MODE === 'mock') return new MockStream();
-  if (env.VITE_STREAM_MODE === 'api') return new ApiStream(env.VITE_STREAM_URL || 'http://127.0.0.1:3001/api/replay/frame');
-  return new WebSocketStream(env.VITE_STREAM_URL || 'ws://127.0.0.1:3001/stream');
+  const port = source === 'recording' ? 3002 : 3001;
+  if (env.VITE_STREAM_MODE === 'api')
+    return new ApiStream(env.VITE_STREAM_URL || `http://127.0.0.1:${port}/api/${source === 'recording' ? 'replay' : 'live'}/frame`);
+  return new WebSocketStream(env.VITE_STREAM_URL || `ws://127.0.0.1:${port}/stream`);
 }

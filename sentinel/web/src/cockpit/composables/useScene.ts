@@ -1,10 +1,18 @@
 import { onMounted, onUnmounted, shallowRef, ref, watch } from 'vue';
 import { useSceneStore } from '../stores/scene';
-import { createStream } from '../services/stream';
+import { createStream, type MonitorSource } from '../services/stream';
 import { interpolateTargets } from '../core/fusion';
 import type { Target } from '../types';
-export function useScene() {
+export function useScene(source: MonitorSource) {
   const store = useSceneStore();
+  store.frame = { timestamp: 0, targets: [], source };
+  store.connection = 'connecting';
+  store.playing = true;
+  store.select('—');
+  store.seekRequest = null;
+  store.cameraLatencyMs = null;
+  store.latency = 0;
+  store.fps = 0;
   const renderTargets = shallowRef<Target[]>([]);
   const time = ref(0);
   let old: Target[] = [],
@@ -16,7 +24,7 @@ export function useScene() {
     sampleAt = 0,
     count = 0,
     pausedAt = 0;
-  const stream = createStream();
+  const stream = createStream(source);
   const stopSelection = watch(() => store.selectedId, id => stream.select?.(id));
   const stopSeek = watch(() => store.seekRequest, request => { if(request) stream.seek?.(request.positionMs); });
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -55,7 +63,6 @@ export function useScene() {
   }
   onMounted(() => {
     sampleAt = performance.now();
-    // 重新进入驾驶舱或热更新时，沿用用户的暂停状态。
     stream.setPaused(!store.playing);
     stream.start(
       (frame) => {

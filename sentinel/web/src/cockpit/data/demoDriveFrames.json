@@ -1,0 +1,233 @@
+[
+  {
+    "time": 0.0,
+    "car": 4,
+    "bike": 1,
+    "low": 5,
+    "medium": 0,
+    "high": 0,
+    "lead": 0.19,
+    "side": 0.14,
+    "bikeRisk": 0.19
+  },
+  {
+    "time": 0.5,
+    "car": 4,
+    "bike": 1,
+    "low": 5,
+    "medium": 0,
+    "high": 0,
+    "lead": 0.18,
+    "side": 0.09,
+    "bikeRisk": 0.19
+  },
+  {
+    "time": 1.0,
+    "car": 5,
+    "bike": 1,
+    "low": 6,
+    "medium": 0,
+    "high": 0,
+    "lead": 0.21,
+    "side": 0.13,
+    "bikeRisk": 0.19
+  },
+  {
+    "time": 1.5,
+    "car": 5,
+    "bike": 1,
+    "low": 6,
+    "medium": 0,
+    "high": 0,
+    "lead": 0.25,
+    "side": 0.11,
+    "bikeRisk": 0.19
+  },
+  {
+    "time": 2.0,
+    "car": 5,
+    "bike": 1,
+    "low": 6,
+    "medium": 0,
+    "high": 0,
+    "lead": 0.3,
+    "side": 0.1,
+    "bikeRisk": 0.19
+  },
+  {
+    "time": 2.5,
+    "car": 4,
+    "bike": 1,
+    "low": 4,
+    "medium": 1,
+    "high": 0,
+    "lead": 0.38,
+    "side": 0.19,
+    "bikeRisk": 0.19
+  },
+  {
+    "time": 3.0,
+    "car": 4,
+    "bike": 1,
+    "low": 4,
+    "medium": 1,
+    "high": 0,
+    "lead": 0.47,
+    "side": 0.22,
+    "bikeRisk": 0.19
+  },
+  {
+    "time": 3.5,
+    "car": 5,
+    "bike": 1,
+    "low": 5,
+    "medium": 1,
+    "high": 0,
+    "lead": 0.58,
+    "side": 0.26,
+    "bikeRisk": 0.19
+  },
+  {
+    "time": 4.0,
+    "car": 5,
+    "bike": 1,
+    "low": 5,
+    "medium": 0,
+    "high": 1,
+    "lead": 0.7,
+    "side": 0.2,
+    "bikeRisk": 0.17
+  },
+  {
+    "time": 4.5,
+    "car": 3,
+    "bike": 1,
+    "low": 2,
+    "medium": 1,
+    "high": 1,
+    "lead": 0.78,
+    "side": 0.37,
+    "bikeRisk": 0.17
+  },
+  {
+    "time": 5.0,
+    "car": 3,
+    "bike": 1,
+    "low": 2,
+    "medium": 1,
+    "high": 1,
+    "lead": 0.78,
+    "side": 0.39,
+    "bikeRisk": 0.17
+  },
+  {
+    "time": 5.5,
+    "car": 4,
+    "bike": 1,
+    "low": 3,
+    "medium": 1,
+    "high": 1,
+    "lead": 0.74,
+    "side": 0.42,
+    "bikeRisk": 0.17
+  },
+  {
+    "time": 6.0,
+    "car": 3,
+    "bike": 1,
+    "low": 2,
+    "medium": 2,
+    "high": 0,
+    "lead": 0.66,
+    "side": 0.45,
+    "bikeRisk": 0.17
+  },
+  {
+    "time": 6.5,
+    "car": 2,
+    "bike": 1,
+    "low": 1,
+    "medium": 2,
+    "high": 0,
+    "lead": 0.59,
+    "side": 0.52,
+    "bikeRisk": 0.17
+  },
+  {
+    "time": 7.0,
+    "car": 3,
+    "bike": 1,
+    "low": 2,
+    "medium": 2,
+    "high": 0,
+    "lead": 0.55,
+    "side": 0.56,
+    "bikeRisk": 0.17
+  },
+  {
+    "time": 7.5,
+    "car": 3,
+    "bike": 1,
+    "low": 2,
+    "medium": 2,
+    "high": 0,
+    "lead": 0.48,
+    "side": 0.51,
+    "bikeRisk": 0.17
+  },
+  {
+    "time": 8.0,
+    "car": 4,
+    "bike": 1,
+    "low": 3,
+    "medium": 2,
+    "high": 0,
+    "lead": 0.42,
+    "side": 0.4,
+    "bikeRisk": 0.16
+  },
+  {
+    "time": 8.5,
+    "car": 3,
+    "bike": 1,
+    "low": 3,
+    "medium": 1,
+    "high": 0,
+    "lead": 0.4,
+    "side": 0.24,
+    "bikeRisk": 0.16
+  },
+  {
+    "time": 9.0,
+    "car": 3,
+    "bike": 1,
+    "low": 3,
+    "medium": 1,
+    "high": 0,
+    "lead": 0.37,
+    "side": null,
+    "bikeRisk": 0.16
+  },
+  {
+    "time": 9.5,
+    "car": 3,
+    "bike": 1,
+    "low": 3,
+    "medium": 1,
+    "high": 0,
+    "lead": 0.36,
+    "side": null,
+    "bikeRisk": 0.16
+  },
+  {
+    "time": 9.75,
+    "car": 2,
+    "bike": 1,
+    "low": 2,
+    "medium": 1,
+    "high": 0,
+    "lead": 0.36,
+    "side": null,
+    "bikeRisk": 0.16
+  }
+]

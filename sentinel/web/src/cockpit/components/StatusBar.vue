@@ -89,8 +89,8 @@ onUnmounted(() => {
         <path d="M28 3v9M28 52v9" stroke="#e9ffff" stroke-width="1.5" />
       </svg>
       <div>
-        <h1>多模态融合监控中枢</h1>
-        <p>MULTI-MODAL FUSION MONITORING CENTER</p>
+        <h1>SENTINEL</h1>
+        <p>雷达视觉监控台</p>
       </div>
     </div>
     <div class="system-health">
