@@ -2,17 +2,15 @@ import { onMounted, onUnmounted, shallowRef, ref, watch } from 'vue';
 import { useSceneStore } from '../stores/scene';
 import { createStream, type MonitorSource } from '../services/stream';
 import { interpolateTargets } from '../core/fusion';
-import type { Target } from '../types';
-export function useScene(source: MonitorSource) {
+import type { DataStream, Target } from '../types';
+import type { ReplayRecording } from '../data/bundledReplay';
+
+export function useScene(configuration: () => {
+  source: MonitorSource;
+  bundledReplay?: boolean;
+  imported?: ReplayRecording;
+}) {
   const store = useSceneStore();
-  store.frame = { timestamp: 0, targets: [], source };
-  store.connection = 'connecting';
-  store.playing = true;
-  store.select('—');
-  store.seekRequest = null;
-  store.cameraLatencyMs = null;
-  store.latency = 0;
-  store.fps = 0;
   const renderTargets = shallowRef<Target[]>([]);
   const time = ref(0);
   let old: Target[] = [],
@@ -24,14 +22,15 @@ export function useScene(source: MonitorSource) {
     sampleAt = 0,
     count = 0,
     pausedAt = 0;
-  const stream = createStream(source);
-  const stopSelection = watch(() => store.selectedId, id => stream.select?.(id));
-  const stopSeek = watch(() => store.seekRequest, request => { if(request) stream.seek?.(request.positionMs); });
+  let active: DataStream | undefined;
+  let stopStream: (() => void) | undefined;
+  const stopSelection = watch(() => store.selectedId, id => active?.select?.(id));
+  const stopSeek = watch(() => store.seekRequest, request => { if(request) active?.seek?.(request.positionMs); });
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const stopWatch = watch(
     () => store.playing,
     (value) => {
-      stream.setPaused(!value);
+      active?.setPaused(!value);
       if (!value) pausedAt = performance.now();
       else {
         if (receivedAt) receivedAt += performance.now() - pausedAt;
@@ -61,36 +60,74 @@ export function useScene(source: MonitorSource) {
     }
     raf = requestAnimationFrame(animate);
   }
-  onMounted(() => {
-    sampleAt = performance.now();
-    stream.setPaused(!store.playing);
+  function startStream({ source, bundledReplay, imported }: ReturnType<typeof configuration>) {
+    const previous = active;
+    const stream = active = createStream(source, bundledReplay, imported);
+    previous?.dispose();
+    old = [];
+    current = [];
+    receivedAt = 0;
+    pausedAt = 0;
+    renderTargets.value = [];
+    time.value = 0;
+    store.replayVideo = stream.replayVideo ?? null;
+    store.imageReplay = !!(imported && 'images' in imported);
+    store.replayRiskHistory = undefined;
+    store.frame = { timestamp: 0, targets: [], source };
+    store.connection = 'connecting';
+    store.playing = true;
+    store.select('—');
+    store.seekRequest = null;
+    store.cameraLatencyMs = null;
+    store.latency = 0;
+    store.fps = 0;
     stream.start(
       (frame) => {
+        if (active !== stream) return;
+        const selectedTrackId = store.selected?.camera?.trackId;
         old = renderTargets.value.length ? renderTargets.value : frame.targets;
         current = frame.targets.map((t) => ({ ...t, history: t.history ?? [] }));
         receivedAt = performance.now();
         store.frame = { ...frame, targets: current };
-        if (!current.some((t) => t.id === store.selectedId)) store.select(current[0]?.id ?? '—');
+        store.replayRiskHistory = stream.replayRiskHistory;
+        if (!current.some((t) => t.id === store.selectedId)) {
+          const continued = selectedTrackId && current.find((target) => target.camera?.trackId === selectedTrackId);
+          if (continued) store.select(continued.id);
+          else store.select(current[0]?.id ?? '—');
+        }
+        store.keepReplayRiskSelection();
         if (frame.source !== 'mock' || !renderTargets.value.length) renderTargets.value = current;
         // Mock 的时间戳为仿真时间，延迟不可当作真实网络延迟。
         store.latency = frame.source === 'recording' || store.connection === 'mock' ? 0 : Math.max(0, Date.now() - frame.timestamp);
       },
       (state) => {
+        if (active !== stream) return;
         store.connection = state;
         if(store.frame.source==='live' && ['disconnected','error','connecting'].includes(state)){
           current=[];old=[];renderTargets.value=[];
           store.frame={...store.frame,timestamp:Date.now(),targets:[],riskField:undefined,cameraFrame:undefined,
             ...(store.frame.live?{live:{...store.frame.live,radar:{...store.frame.live.radar,state:'disconnected'},
+              camera:{state:'disconnected',message:'实时连接已断开，等待恢复摄像头数据'},
+              association:{state:'waiting',message:'等待实时连接恢复'},
               fusion:{state:'unavailable',message:'实时连接已断开，等待恢复雷达数据'}}}:{})};
         }
       },
-      playing => { store.playing = playing; },
+      playing => { if (active === stream) store.playing = playing; },
     );
+  }
+  onMounted(() => {
+    sampleAt = performance.now();
+    stopStream = watch(configuration, startStream, { immediate: true });
     raf = requestAnimationFrame(animate);
   });
   onUnmounted(() => {
     cancelAnimationFrame(raf);
-    stream.dispose();
+    stopStream?.();
+    const stream = active;
+    active = undefined;
+    stream?.dispose();
+    if (store.replayVideo === stream?.replayVideo) store.replayVideo = null;
+    if (store.replayRiskHistory === stream?.replayRiskHistory) store.replayRiskHistory = undefined;
     stopWatch();
     stopSelection(); stopSeek();
   });

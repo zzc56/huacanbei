@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, useId, watch } from 'vue';
 import type { Target } from '../types';
 import { useSceneStore } from '../stores/scene';
 import { useCanvas } from '../composables/useCanvas';
 import { useRecordedCamera } from '../composables/useRecordedCamera';
+import { targetDisplayName } from '../core/targetLabels';
 import { sampleField } from '../../core/RealDataAdapter';
 import { useVideoSource } from '../composables/useVideoSource';
 import { riskGrid, riskParams } from '../core/risk';
@@ -39,6 +40,8 @@ const {
   getImage,
 } = useVideoSource(video);
 const recordedCamera = useRecordedCamera(video, computed(() => props.mode === 'camera'));
+const displayedCamera = computed(() => store.replayVideo ? store.frame.cameraFrame : recordedCamera.ready.value?.meta);
+const selectedName = computed(() => targetDisplayName(store.selected));
 const measured = computed(() => store.connection !== 'mock');
 const captured = computed(() => store.frame.source==='recording'||store.frame.source==='live');
 const fillViewport = ref(true);
@@ -55,6 +58,37 @@ const worldBounds = computed<PlotBounds | undefined>(() => {
 function imageBox(sw: number, sh: number, w: number, h: number) {
   const ratio = props.compact && fillViewport.value ? Math.max(w/sw,h/sh) : Math.min(w/sw,h/sh);
   return { x: (w-sw*ratio)/2, y: (h-sh*ratio)/2, w: sw*ratio, h: sh*ratio };
+}
+const sharpenFilter = useId();
+let sharpFrame: CanvasRenderingContext2D | null | undefined;
+let previousVideo: HTMLVideoElement | undefined;
+let previousVideoTime = -1;
+let previousVideoFrames = -1;
+
+function replayImage(player: HTMLVideoElement): CanvasImageSource {
+  const { videoWidth, videoHeight, currentTime } = player;
+  if (player.seeking || !videoWidth || !videoHeight || videoWidth > 1280 || videoHeight > 720) return player;
+  if (sharpFrame === undefined) sharpFrame = document.createElement('canvas').getContext('2d');
+  if (!sharpFrame || !('filter' in sharpFrame)) return player;
+
+  const frames = player.getVideoPlaybackQuality().totalVideoFrames;
+  const { canvas: buffer } = sharpFrame;
+  const sameSize = buffer.width === videoWidth && buffer.height === videoHeight;
+  if (sameSize && previousVideo === player && previousVideoFrames === frames &&
+    (player.paused ? previousVideoTime === currentTime : Math.abs(previousVideoTime - currentTime) < 0.07)) return buffer;
+
+  if (!sameSize) {
+    buffer.width = videoWidth;
+    buffer.height = videoHeight;
+  }
+  // Apply the kernel in source pixels, then scale the result to the viewport.
+  sharpFrame.clearRect(0, 0, videoWidth, videoHeight);
+  sharpFrame.filter = `url(#${sharpenFilter})`;
+  sharpFrame.drawImage(player, 0, 0);
+  previousVideo = player;
+  previousVideoTime = currentTime;
+  previousVideoFrames = frames;
+  return buffer;
 }
 const contoursVisible = ref(true),
   trailsVisible = ref(true),
@@ -172,7 +206,24 @@ useCanvas(canvas, (ctx, w, h) => {
   ctx.drawImage(base, 0, 0);
   if (props.mode === 'camera') {
     let box = { x: 0, y: 0, w, h };
-    if(captured.value) {
+    if (store.replayVideo) {
+      const player = store.replayVideo;
+      ctx.fillStyle = '#e5eeee';
+      ctx.fillRect(0, 0, w, h);
+      if (player.readyState >= 2) {
+        box = imageBox(player.videoWidth, player.videoHeight, w, h);
+        ctx.save();
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(replayImage(player), box.x, box.y, box.w, box.h);
+        ctx.restore();
+        const drawBoxes = store.frame.cameraFrame?.annotated !== true;
+        hits = cameraTargets(ctx, w, h, props.targets, store.selectedId, false, box, drawBoxes, drawBoxes);
+      } else {
+        hits = [];
+        const message = store.connection === 'error' ? '录像加载失败' : '正在加载录像…';
+        text(ctx, message, w / 2, h / 2, '#466e82', 15, 'center');
+      }
+    } else if (captured.value) {
       const ready=recordedCamera.ready.value;
       const now=Date.now();
       if(now>=nextCameraTiming){
@@ -249,7 +300,9 @@ useCanvas(canvas, (ctx, w, h) => {
       }
       ctx.restore();
     }
-    hits = mapTargets(ctx, w, h, props.targets, store.selectedId, props.mode, trailsVisible.value, worldBounds.value, !props.minimap);
+    const targets = props.mode === 'risk' && store.usesRadarMeasurements
+      ? props.targets.filter(target => target.radar) : props.targets;
+    hits = mapTargets(ctx, w, h, targets, store.selectedId, props.mode, trailsVisible.value, worldBounds.value, !props.minimap);
   }
 });
 function point(event: MouseEvent) {
@@ -283,8 +336,13 @@ function inspect(event: MouseEvent) {
 </script>
 <template>
   <div class="scene-viewport" :class="'view-' + mode">
+    <svg v-if="mode === 'camera'" aria-hidden="true" width="0" height="0" style="position: absolute">
+      <filter :id="sharpenFilter" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
+        <feConvolveMatrix order="3" kernelMatrix="0 -.18 0 -.18 1.72 -.18 0 -.18 0" divisor="1" edgeMode="duplicate" preserveAlpha="true" />
+      </filter>
+    </svg>
     <video
-      v-if="mode === 'camera' && (store.frame.cameraFrame?.videoUrl || store.videoSource.type === 'video')"
+      v-if="mode === 'camera' && !store.replayVideo && (store.frame.cameraFrame?.videoUrl || store.videoSource.type === 'video')"
       ref="video"
       :src="store.frame.source === 'recording' ? undefined : store.frame.cameraFrame?.videoUrl || store.videoSource.url"
       muted
@@ -301,8 +359,8 @@ function inspect(event: MouseEvent) {
       :data-selected-target="store.selectedId"
       :data-view="mode"
       :data-framing="mode === 'risk' ? 'metric' : !compact || !fillViewport ? 'complete' : mode === 'camera' ? 'cover' : forwardRadar ? 'forward' : 'complete'"
-      :data-camera-sequence="recordedCamera.ready.value?.meta.sequence"
-      :data-camera-timestamp="recordedCamera.ready.value?.meta.timestamp"
+      :data-camera-sequence="displayedCamera?.sequence"
+      :data-camera-timestamp="displayedCamera?.timestamp"
       :data-field-timestamp="store.frame.riskField?.timestamp"
       :data-field-scope="store.frame.riskField?.scope"
       @click="select"
@@ -329,7 +387,7 @@ function inspect(event: MouseEvent) {
       ><span class="scene-caption-right"
         >{{
           mode === 'camera'
-            ? captured ? 'FRAME '+(recordedCamera.ready.value?.meta.sequence ?? '—') : store.videoSource.type.toUpperCase()
+            ? captured ? 'FRAME '+(displayedCamera?.sequence ?? '—') : store.videoSource.type.toUpperCase()
             : mode === 'radar'
               ? (forwardRadar ? '前向视图 / ' : 'PPI / ')+(store.frame.radarRange??200)+' m'
               : store.frame.riskField ? store.frame.riskField.width+' × '+store.frame.riskField.height : measured ? '风险未知' : '128 × 96'
@@ -353,9 +411,9 @@ function inspect(event: MouseEvent) {
           ? 'OBJECT DETECTION + SENSOR FUSION'
           : mode === 'radar'
             ? 'RANGE · AZIMUTH · VELOCITY'
-            : store.frame.live ? 'XY 等比例 · 圆形风险范围 / 未联合标定' : measured ? 'XY 等比例 · RECORDED FIELD / VALID MASK' : 'RISK DISTRIBUTION / DEMO MODEL'
+            : store.frame.live ? 'XY 等比例 · 雷达圆形风险范围' : measured ? 'XY 等比例 · RECORDED FIELD / VALID MASK' : 'RISK DISTRIBUTION / DEMO MODEL'
       }}</span
-      ><span>{{ store.selectedId }}<i />{{ ((store.frame.replay?.positionMs ?? (store.frame.live ? store.frame.timestamp-store.frame.live.startedAt : store.frame.timestamp)) / 1000).toFixed(1) }} s</span>
+      ><span>{{ selectedName }}<i />{{ ((store.frame.replay?.positionMs ?? (store.frame.live ? store.frame.timestamp-store.frame.live.startedAt : store.frame.timestamp)) / 1000).toFixed(1) }} s</span>
     </div>
     <div v-if="mode === 'camera' && compact" class="scene-tools">
       <span v-if="fillViewport">等比裁切</span>
@@ -392,10 +450,10 @@ function inspect(event: MouseEvent) {
       </button>
     </div>
     <div v-if="!compact && store.selected && mode === 'camera' && !store.selected.camera" class="view-notice">
-      {{ store.selectedId }} 当前帧没有对应的视觉检测框
+      {{ selectedName }} 当前帧没有对应的视觉检测框
     </div>
     <div v-if="!compact && store.selected && mode === 'radar' && !store.selected.radar" class="view-notice">
-      {{ store.selectedId }} 为仅视觉目标，当前无雷达回波
+      {{ selectedName }} 当前帧暂无雷达定位
     </div>
     <div v-if="measured && mode==='risk' && !store.frame.riskField" class="view-notice">当前时刻风险场不可用 · 未知区域不视为零风险</div>
     <div v-else-if="mode==='risk' && store.frame.source==='live' && !store.frame.targets.some(t=>t.radar)" class="view-notice">雷达在线，当前无目标 · 等待目标进入探测范围</div>

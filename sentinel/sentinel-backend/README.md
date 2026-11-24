@@ -2,11 +2,11 @@
 
 三种数据源，用环境变量 `SOURCE_MODE` 选：
 
-- `recording`　读"数据保存"里的实测记录做回放，默认就是它
-- `live`　　　接实物雷达 TCP 和网络摄像头 RTSP
+- `recording`　读取「数据保存」中的原始实测记录
+- `live`　　　接实物雷达 TCP 和网络摄像头 RTSP，默认模式
 - `synthetic`　合成数据，只做测试用
 
-根目录 `launch.mjs` 会带着 `SOURCE_MODE` 启动这里，一般不用手动起。
+根目录 `launch.mjs` 会启动实时接口，前端可以在实时连接与自带历史回放之间切换。
 
 ## 单独跑
 
@@ -22,6 +22,18 @@ npm start
 
 回放模式要能找到数据目录，默认就是仓库里的 `数据保存`，换位置的话设 `RECORDING_DIR`。
 
+## 邮箱注册与密码重置
+
+在 `sentinel-backend/.env` 中填写 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USER` 和 `SMTP_PASS`，然后重启后端。从 `.env.example` 可以复制配置模板。QQ 邮箱的模板使用 `smtp.qq.com` 和端口 `465`，`SMTP_PASS` 填邮箱的 SMTP 授权码。发信服务使用发件邮箱发送验证码。
+
+在首页点「登录 → 忘记密码？」即可使用注册邮箱接收验证码并设置新密码。重置验证码有效期为 10 分钟，重置成功后，该账号已有的登录会话会失效。
+
+账号保存在 `sentinel-backend/auth-data/accounts.sqlite`。首次访问账号接口时，会把同目录下的旧账号 JSON 一次性迁入 SQLite，保留原密码哈希和 JSON 备份。已有账号可以继续使用原密码。设置 `AUTH_DATA_DIR` 可指定账号目录。验证码和登录会话保存在后端内存中。
+
+## 回放库
+
+回放库将录像或采样画面、时间线和目标数据打包为 ZIP，保存在 `sentinel-backend/replay-data/replays.sqlite`。重启后可继续查看和导出已保存的回放。可用 `REPLAY_DATA_DIR` 指定存储目录。
+
 ## 接口
 
 | 路径 | 说明 |
@@ -31,6 +43,8 @@ npm start
 | GET `/api/replay/manifest` | 回放清单：时间范围、各类记录条数、录像地址 |
 | GET `/api/replay/frame?timeMs=` | 指定时刻的一帧 |
 | GET `/api/live/status` | 实时模式的雷达和摄像头状态 |
+| GET / POST `/api/replays` | 查询和保存本机回放 |
+| GET `/api/replays/:id` | 下载指定回放的 ZIP |
 | GET `/media/*` | 回放录像和采样帧，支持 Range |
 | POST `/api/control` | synthetic 模式的 play / pause / reset |
 

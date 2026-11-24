@@ -6,8 +6,27 @@
     <title>多模态融合监控中枢 · SENTINEL</title>
     <meta name="description" content="雷达与视觉多模态感知融合、目标运动解算与实时风险场驾驶舱" />
     <link rel="icon" type="image/svg+xml" href="/sentinel.svg" />
+    <link rel="stylesheet" href="%BASE_URL%login-transition.css" />
+    <script>
+      (() => {
+        let startedAt;
+        try {
+          startedAt = Number(sessionStorage.getItem('sentinel-login-transition'));
+          sessionStorage.removeItem('sentinel-login-transition');
+        } catch {
+          return;
+        }
+        const age = Date.now() - startedAt;
+        if (location.hash !== '#/?mode=live' || age < 0 || age > 15000 ||
+            matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        const page = document.documentElement;
+        page.dataset.loginTransition = 'arriving';
+        window.setTimeout(() => delete page.dataset.loginTransition, 5000);
+      })();
+    </script>
   </head>
   <body>
+    <div class="login-transition" aria-hidden="true"><span>SENTINEL</span></div>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

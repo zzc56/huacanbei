@@ -60,7 +60,7 @@ export class LiveRiskField {
       calibration_valid: false, calibration: null, vision_sequence: null,
       model_version: 'live-radar-circular-distance-ttc-v2',
       message: targets.length
-        ? '实时雷达相对风险估计 · 圆形影响范围 · 基于距离与运动量 · 尚未联合标定'
+        ? '实时雷达相对风险估计 · 圆形影响范围 · 基于距离与运动量'
         : '雷达在线，当前无目标 · 场值为零表示无目标贡献，非安全保证',
       grid_width: width, grid_height: height,
       x_axis: Array.from({ length: width }, (_, i) => b.xMin + i * resolution),

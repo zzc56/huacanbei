@@ -11,6 +11,7 @@ import FusionPage from '@/views/console/FusionPage.vue';
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
+    { path: '/login', name: 'login', component: HomePage },
     { path: '/history', name: 'history', component: HomePage },
     { path: '/live/waiting', redirect: '/?mode=live' },
     { path: '/', name: 'home', component: HomePage },
@@ -26,6 +27,11 @@ const router = createRouter({
 });
 
 router.beforeEach(to => {
+  if (to.name === 'login') {
+    const login = `${import.meta.env.BASE_URL}showcase/index.html?login=1`;
+    window.location.replace(to.query.mode === 'register' ? `${login}&mode=register` : login);
+    return false;
+  }
   if (to.path === '/' && !to.query.mode) {
     window.location.replace(import.meta.env.BASE_URL + 'showcase/index.html');
     return false;

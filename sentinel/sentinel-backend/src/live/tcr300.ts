@@ -2,13 +2,13 @@
  * Units/axis signs still require field calibration. Unsupported class/confidence are omitted.
  */
 export interface RadarObservation {
-  target_seq: number; track_id: number; host_received_utc: string;
+  target_seq: number; track_id: number; host_received_utc: string; track_start_seq?: number;
   x_lateral: number; y_longitudinal: number; vx_lateral: number; vy_longitudinal: number;
   range: number; angle: number; rcs: number;
 }
 export type RadarMessage =
   | { type: 'cycle'; count: number; counter: number }
-  | { type: 'target'; target: Omit<RadarObservation, 'target_seq' | 'host_received_utc'> };
+  | { type: 'target'; target: Omit<RadarObservation, 'target_seq' | 'host_received_utc' | 'track_start_seq'> };
 
 export class Tcr300Decoder {
   private pending = Buffer.alloc(0);

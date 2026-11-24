@@ -14,7 +14,12 @@ const date = computed(() => now.value.toLocaleDateString('en-CA', { timeZone: 'A
 const liveStatus = computed(()=>{
   const live=store.frame.live;if(!live)return '';
   const radar=live.radar.state==='streaming',camera=live.camera.state==='streaming';
-  return radar&&camera?'雷达 / 摄像头在线':camera?'摄像头在线 · 雷达待连接':radar?'实物雷达在线':live.radar.state==='stale'?'雷达数据超时':'等待设备连接';
+  if (radar) return camera ? '雷达 / 摄像头在线' : '实物雷达在线';
+  const cameraLabel = camera ? '摄像头在线 · ' : '';
+  if (live.radar.state === 'unconfigured') return cameraLabel + '雷达未配置';
+  if (live.radar.state === 'awaiting-data') return cameraLabel + '等待雷达报文';
+  if (live.radar.state === 'stale') return cameraLabel + '雷达数据超时';
+  return camera ? cameraLabel + '雷达待连接' : '等待设备连接';
 });
 const status = computed(
   () =>
@@ -49,7 +54,7 @@ function keyboard(event: KeyboardEvent) {
     event.altKey ||
     event.metaKey ||
     (event.target as HTMLElement)?.matches('input,textarea,select,button') ||
-    document.querySelector('.source-dialog')
+    document.querySelector('.source-dialog, dialog[open]')
   )
     return;
   if (event.code === 'Space') {
@@ -132,6 +137,7 @@ onUnmounted(() => {
       </div>
     </div>
     <div class="header-actions">
+      <slot />
       <button
         class="icon-button"
         @click="store.playing = !store.playing"

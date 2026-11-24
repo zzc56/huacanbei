@@ -1,0 +1,55 @@
+:root {
+  color-scheme: dark;
+  background: #151d1a;
+}
+
+.top {
+  display: none;
+}
+
+.hero {
+  min-height: max(680px, 100svh);
+}
+
+.intro h1 {
+  width: fit-content;
+  max-width: 100%;
+  color: #fff;
+}
+
+.intro h1 em {
+  color: inherit;
+}
+
+.intro .title-center {
+  display: block;
+  text-align: left;
+}
+
+.hero-image,
+.hero-video {
+  filter: brightness(1.1);
+}
+
+.hero-shade {
+  background:
+    linear-gradient(90deg, #0b1112e1 0%, #0a10119c 31%, transparent 68%),
+    linear-gradient(0deg, #131916e0 0%, transparent 27%);
+}
+
+@media (max-width: 680px) {
+  .hero {
+    min-height: max(560px, 100svh);
+  }
+
+  .hero-shade {
+    background: linear-gradient(
+      #101917 28%,
+      #141e1bd8 39%,
+      #141e1b4d 55%,
+      transparent 72%,
+      #10191734 87%,
+      #101917
+    );
+  }
+}

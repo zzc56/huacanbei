@@ -74,7 +74,7 @@ export function registerStream(app: FastifyInstance, pipeline: PipelineService, 
     }
   }, 15000);
   heartbeat.unref();
-  app.addHook('onClose', async () => {
+  app.addHook('preClose', async () => {
     unsubscribe(); unsubscribeState(); clearInterval(heartbeat);
     for (const socket of clients.keys()) socket.terminate();
     await new Promise<void>(resolve => server.close(() => resolve()));

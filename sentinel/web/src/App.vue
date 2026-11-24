@@ -1,6 +1,5 @@
 <template>
-
-  <Dashboard v-if="isMonitor" :key="source" :source="source" @change-source="changeSource" />
+  <Dashboard v-if="isMonitor" :source="source" :bundled-replay="bundledReplay" @change-source="changeSource" />
   <AppShell v-else>
     <RouterView />
   </AppShell>
@@ -8,7 +7,6 @@
 
 <script setup lang="ts">
 import AppShell from '@/components/layout/AppShell.vue';
-
 import Dashboard from '@/cockpit/Dashboard.vue';
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -17,8 +15,9 @@ const route = useRoute();
 const router = useRouter();
 const isMonitor = computed(() => route.path === '/' || route.path === '/history');
 const source = computed<MonitorSource>(() => route.path === '/history' || route.query.mode === 'recording' ? 'recording' : 'live');
+const bundledReplay = computed(() => source.value === 'recording' && route.query.view !== 'data');
 function changeSource(value: MonitorSource) {
-  if (value !== source.value) void router.push(value === 'recording' ? '/history' : '/?mode=live');
+  void router.push(value === 'recording' ? '/history' : '/?mode=live');
 }
 </script>
 

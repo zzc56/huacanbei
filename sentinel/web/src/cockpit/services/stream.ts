@@ -1,5 +1,7 @@
 import type { ConnectionState, DataStream, Frame, Target } from '../types';
 import { projectCamera, solveFusion } from '../core/fusion';
+import { ImageReplayStream } from '../data/imageReplay';
+import { BundledReplayStream, type ReplayRecording } from '../data/bundledReplay';
 
 const seeds = [
   [-32, 106, 0.32, 'car', 'fused'],
@@ -84,8 +86,11 @@ export class MockStream implements DataStream {
 export { WebSocketStream, ApiStream } from '../../core/RealDataStream';
 import { WebSocketStream, ApiStream } from '../../core/RealDataStream';
 export type MonitorSource = 'live' | 'recording';
-export function createStream(source: MonitorSource = 'live'): DataStream {
+export function createStream(source: MonitorSource = 'live', bundledReplay = false, imported?: ReplayRecording): DataStream {
   const env = import.meta.env;
+  if (source === 'recording' && (bundledReplay || imported)) {
+    return imported && 'images' in imported ? new ImageReplayStream(imported) : new BundledReplayStream(imported);
+  }
   if (env.VITE_STREAM_MODE === 'mock') return new MockStream();
   const port = source === 'recording' ? 3002 : 3001;
   if (env.VITE_STREAM_MODE === 'api')

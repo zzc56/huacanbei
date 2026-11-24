@@ -8,13 +8,28 @@ interface CameraFrame { sequence:number; capturedAt:number; width:number; height
 /** A bounded cache keeps the image and detections from a sequence together. */
 export class CameraFrameStore {
   private frames = new Map<number, CameraFrame>();
+  private cachedBytes = 0;
+  private alignmentDelayMs = 0;
   private latest: CameraFrame | undefined;
   private state = 'not-connected';
   private message = '等待外接网络摄像头连接与 RTSP 地址';
   private listeners = new Set<() => void>();
   onFrame(listener:()=>void) { this.listeners.add(listener); return ()=>{this.listeners.delete(listener);}; }
   status(state:string,message:string) { this.state=state; this.message=message; }
-  clear(state:string,message:string) { this.latest=undefined; this.frames.clear(); this.status(state,message); }
+  clear(state:string,message:string) { this.latest=undefined; this.frames.clear(); this.cachedBytes=0; this.status(state,message); }
+  setAlignmentDelay(delayMs: number) {
+    this.alignmentDelayMs = delayMs;
+    this.prune();
+  }
+  private prune() {
+    const capacity = 32 + Math.ceil(this.alignmentDelayMs * 15 / 1000);
+    const cutoff = this.alignmentDelayMs && this.latest ? this.latest.capturedAt - this.alignmentDelayMs - 1500 : -Infinity;
+    for (const [sequence, cached] of this.frames) {
+      if (this.frames.size <= capacity && this.cachedBytes <= 64 * 1024 * 1024 && cached.capturedAt >= cutoff) break;
+      this.cachedBytes -= cached.jpeg.length;
+      this.frames.delete(sequence);
+    }
+  }
   accept(value:unknown, now=Date.now()):boolean {
     if (!value || typeof value!=='object') return false;
     const r=value as Record<string,unknown>;
@@ -41,20 +56,31 @@ export class CameraFrameStore {
     const f:CameraFrame={sequence:r['sequence'],capturedAt:r['capturedAt'],width:r['width'],height:r['height'],
       detections,detector:typeof r['detector']==='string'?r['detector']:'未启用',jpeg,timing};
     this.latest=f;this.frames.set(f.sequence,f);
-    while(this.frames.size>32)this.frames.delete(this.frames.keys().next().value!);
+    this.cachedBytes += jpeg.length;
+    this.prune();
     this.status('streaming',`${f.width} × ${f.height} · ${f.detector} · ${detections.length} 个检测目标`);
     for(const listener of this.listeners)listener();
     return true;
   }
   image(sequence:number) { return this.frames.get(sequence)?.jpeg; }
-  snapshot(now=Date.now()) {
-    const f=this.latest, fresh=!!f&&now-f.capturedAt<=1500;
+  capturedAt(sequence: number) { return this.frames.get(sequence)?.capturedAt; }
+  snapshot(now=Date.now(), delayMs=0) {
+    const latest=this.latest, fresh=!!latest&&now-latest.capturedAt<=1500;
+    const cutoff=now-delayMs;
+    let f=latest;
+    if (fresh && delayMs > 0 && latest.capturedAt > cutoff) {
+      f=undefined;
+      for (const frame of this.frames.values()) {
+        if (frame.capturedAt > cutoff) break;
+        f=frame;
+      }
+    }
     return {
-      vision:fresh?{sequence:f.sequence,captured_utc:new Date(f.capturedAt).toISOString(),width:f.width,height:f.height,
+      vision:fresh&&f&&cutoff-f.capturedAt<=1500?{sequence:f.sequence,captured_utc:new Date(f.capturedAt).toISOString(),width:f.width,height:f.height,
         detections:f.detections,imageUrl:`/api/live/camera/${f.sequence}.jpg`}:null,
       status:{state:this.state==='streaming'&&!fresh?'stale':this.state,
         message:this.state==='streaming'&&!fresh?'摄像头数据超时，等待重新连接':this.message,
-        ageMs:f?now-f.capturedAt:null,sequence:f?.sequence??0,detector:f?.detector??'未启用',timing:f?.timing??{}},
+        ageMs:latest?now-latest.capturedAt:null,sequence:f?.sequence??0,detector:latest?.detector??'未启用',timing:latest?.timing??{}},
     };
   }
 }
@@ -93,8 +119,12 @@ export class LiveCamera extends CameraFrameStore {
     // Drain codec diagnostics; RTSP credentials must never enter application logs.
     child.stderr.resume();
     child.on('error',()=>this.clear('error','摄像头进程未能启动，请检查 CAMERA_PYTHON 和本机依赖'));
-    child.on('close',()=>{
+    child.on('close',(code)=>{
       if(this.disposed)return;
+      if(code===78){
+        this.clear('error','缺少摄像头采集依赖，请在已配置的 Python 环境安装 OpenCV 和 NumPy');
+        return;
+      }
       this.clear('disconnected','摄像头采集进程已退出，正在重连');
       this.retry=setTimeout(()=>this.start(url),3000);
     });

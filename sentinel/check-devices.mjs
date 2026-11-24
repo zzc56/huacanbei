@@ -2,16 +2,16 @@ import net from 'node:net';
 import os from 'node:os';
 import {loadSettings} from './settings.mjs';
 
-const {config,python,pythonReady}=loadSettings();
+const {config,python,pythonReady}=loadSettings({allowUnconfigured:true});
 const addresses=Object.values(os.networkInterfaces()).flat().filter(Boolean).map(i=>i.address);
 console.log(`Python: ${python} (${pythonReady?'已找到':'不存在'})`);
 async function check(name,host,port,localAddress){
-  if(!addresses.includes(localAddress)){
+  if(localAddress&&!addresses.includes(localAddress)){
     console.log(`${name}: 本机缺少网卡地址 ${localAddress}，请检查接线、驱动和 IPv4 配置`);
     return false;
   }
   return new Promise(resolve=>{
-    const socket=net.createConnection({host,port,localAddress});
+    const socket=net.createConnection({host,port,...(localAddress?{localAddress}:{})});
     let done=false;
     const finish=(ok,message)=>{
       if(done)return;
@@ -26,7 +26,12 @@ async function check(name,host,port,localAddress){
     socket.once('error',e=>finish(false,e.code));
   });
 }
-const radar=await check('雷达',config.radar.host,config.radar.port,config.radar.localAddress);
-const url=new URL(config.camera.rtspUrl);
-const camera=!config.camera.enabled||await check('摄像头',url.hostname,Number(url.port)||554,config.camera.localAddress);
+let radar=false;
+if(config.radar.host)radar=await check('雷达',config.radar.host,config.radar.port,config.radar.localAddress);
+else console.log('雷达: 未配置，请在实时页面的雷达设置中填写地址');
+let camera=true;
+if(config.camera.enabled){
+  const url=new URL(config.camera.rtspUrl);
+  camera=await check('摄像头',url.hostname,Number(url.port)||(url.protocol==='rtsps:'?322:554),config.camera.localAddress);
+}else console.log('摄像头: 未启用');
 process.exitCode=radar&&camera&&(!config.camera.enabled||pythonReady)?0:1;

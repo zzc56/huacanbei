@@ -168,5 +168,8 @@ export function registerRecording(app: FastifyInstance, origins: Set<string>) {
     const cleanup = () => { if (disposed) return; disposed = true; clearInterval(timer); clients.delete(socket); };
     socket.on('close', cleanup); socket.on('error', () => { cleanup(); socket.terminate(); });
   });
-  app.addHook('onClose', async () => { for (const client of clients) client.terminate(); await new Promise<void>(done => wss.close(() => done())); });
+  app.addHook('preClose', async () => {
+    for (const client of clients) client.terminate();
+    await new Promise<void>(done => wss.close(() => done()));
+  });
 }

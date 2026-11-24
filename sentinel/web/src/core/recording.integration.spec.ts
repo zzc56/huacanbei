@@ -1,17 +1,47 @@
 import { expect,it } from 'vitest';
-import { RealDataAdapter } from './RealDataAdapter';
+import { normalizeBox, numeric, RealDataAdapter } from './RealDataAdapter';
+
+type Box = NonNullable<ReturnType<typeof normalizeBox>>;
+type RecordedDetection = { x: unknown; y: unknown; width: unknown; height: unknown; score: unknown; label?: string };
+
+function overlap(a: Box, b: Box) {
+  const width = Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0]));
+  const height = Math.max(0, Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]));
+  const intersection = width * height;
+  return intersection / (a[2] * a[3] + b[2] * b[3] - intersection);
+}
+
+
 // Optional whole-recording integration suite against the running local backend.
 it.runIf(process.env.REAL_DATA_INTEGRATION==='1')('整段实测逐时刻解析，无非有限坐标、失配框、无效风险或重复 ID',async()=>{
   const origin=process.env.REAL_DATA_ORIGIN??'http://127.0.0.1:3001';
   const manifest=await(await fetch(origin+'/api/replay/manifest')).json() as {durationMs:number;counts:{video:number;detections:number}};
   const adapter=new RealDataAdapter(origin);let frames=0,fields=0,empty=0,boxes=0,radar=0;
-  const seenBoxes=new Set<string>(),seenCameraFrames=new Set<number>();
+  const seenBoxes=new Set<string>(),seenRawBoxes=new Set<string>(),seenCameraFrames=new Set<number>();
   const associatedRadars=new Set<string>(),associatedFrames=new Set<string>();
   for(let ms=0;ms<=manifest.durationMs;ms+=100){
     const raw=await(await fetch(origin+'/api/replay/frame?timeMs='+ms)).json();
     const f=adapter.parse(raw)!;expect(f).toBeDefined();expect(f.source).toBe('recording');
     if(f.cameraFrame)seenCameraFrames.add(f.cameraFrame.sequence);
-    expect(f.targets.filter(t=>t.camera)).toHaveLength(raw.vision?.detections.length??0);
+    const detected = f.targets.flatMap(target => target.camera ? [target.camera] : []);
+    const input: RecordedDetection[] = raw.vision?.detections ?? [];
+    const keptByIndex = new Map(detected.map(camera => [camera.detectionIndex, camera]));
+    expect(keptByIndex.size).toBe(detected.length);
+    for (const camera of detected) {
+      const source = input[camera.detectionIndex!];
+      expect(source).toBeDefined();
+      expect(camera.class).toBe(String(source.label ?? 'unknown').toLowerCase());
+      expect(camera.confidence).toBe(numeric(source.score));
+    }
+    for (const [index, source] of input.entries()) {
+      seenRawBoxes.add(f.cameraFrame?.sequence + ':' + index);
+      if (keptByIndex.has(index)) continue;
+      const box = normalizeBox([source.x, source.y, source.width, source.height], f.cameraFrame!.width, f.cameraFrame!.height);
+      const confidence = numeric(source.score);
+      if (!box || confidence === undefined || confidence < 0 || confidence > 1) continue;
+      expect(detected.some(camera => camera.confidence >= confidence && overlap(box, camera.bbox) >= .95 - 1e-9),
+        `Frame ${f.cameraFrame!.sequence}: valid detection ${index} was discarded without a higher-confidence duplicate`).toBe(true);
+    }
     expect(f.targets.filter(t=>t.radar)).toHaveLength(raw.radar.length);
     for(const r of raw.radar){const target=f.targets.find(t=>t.id==='radar:'+r.track_id)!;expect(target.radar?.range).toBe(Number(r.range));expect(target.radar?.azimuth).toBe(Number(r.angle));}
     expect(new Set(f.targets.map(t=>t.id)).size).toBe(f.targets.length);
@@ -33,7 +63,8 @@ it.runIf(process.env.REAL_DATA_INTEGRATION==='1')('整段实测逐时刻解析�
   }
   expect(frames).toBeGreaterThan(2300);expect(fields).toBeGreaterThan(500);expect(empty).toBeGreaterThan(0);expect(boxes).toBeGreaterThan(0);expect(radar).toBeGreaterThan(0);
   expect(seenCameraFrames.size).toBe(manifest.counts.video);
-  expect(seenBoxes.size).toBe(manifest.counts.detections);
+  expect(seenRawBoxes.size).toBe(manifest.counts.detections);
+  expect(seenBoxes.size).toBeGreaterThan(0);
   expect([...associatedRadars].sort()).toEqual(['radar:39','radar:41','radar:42']);expect(associatedFrames.size).toBeGreaterThan(20);
-  console.info(JSON.stringify({frames,fields,empty,boxes,radar,uniqueCameraFrames:seenCameraFrames.size,uniqueDetectionRows:seenBoxes.size,autoAssociatedRadars:[...associatedRadars],autoAssociatedFrames:associatedFrames.size}));
+  console.info(JSON.stringify({frames,fields,empty,boxes,radar,uniqueCameraFrames:seenCameraFrames.size,uniqueDetectionRows:seenRawBoxes.size,visibleDetectionRows:seenBoxes.size,autoAssociatedRadars:[...associatedRadars],autoAssociatedFrames:associatedFrames.size}));
 },60000);

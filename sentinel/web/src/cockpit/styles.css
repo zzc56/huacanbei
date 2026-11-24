@@ -266,9 +266,9 @@
   grid-template-columns: minmax(0, 1fr);
   margin-top: 12px;
 }
-.overview-stage .system-header { height: 80px; }
-.overview-stage .monitor-toolbar { min-height: 58px; }
-.overview-stage .view-tabs { height: 58px; }
+.console-stage .system-header { height: 80px; }
+.console-stage .monitor-toolbar { min-height: 58px; }
+.console-stage .view-tabs { height: 58px; }
 .target-inspector {
   padding: 25px 24px 16px;
   display: flex;
@@ -1109,44 +1109,6 @@
   color: #90aaa8;
   font-size: 12px;
 }
-.system-footer {
-  height: 38px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 10px;
-  color: #8babad;
-  font-size: 10px;
-  letter-spacing: 0.6px;
-}
-.system-footer > span {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.system-footer .live-dot {
-  width: 4px;
-  height: 4px;
-  opacity: 0.7;
-}
-.system-footer span > i:not(.live-dot) {
-  height: 7px;
-  width: 1px;
-  background: #bad2cf;
-  margin: 0 4px;
-}
-.system-footer > b {
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 1.4px;
-  color: #96b1b6;
-}
-.system-footer em {
-  font-style: normal;
-  padding: 0 8px;
-  color: #40bcae;
-}
 .video-decoder {
   position: absolute;
   width: 1px;
@@ -1416,12 +1378,12 @@
 .target-row-body>span>small { color:#497b94;font-size:10px; }
 .target-row-icon { background:#fff;color:#009c98;box-shadow:0 0 0 1px #b6dedf; }
 .target-row.high .target-row-icon { color:#e15e42; }.target-row.mid .target-row-icon { color:#b58d21; }
-.list-foot,.system-footer,.system-footer>b { color:#40768c; }.list-foot { font-size:10px; }
+.list-foot { color:#40768c; font-size:10px; }
 
 /* Dark instrument surround keeps the camera and measurement plots in focus. */
 .cockpit-viewport { background:#07131d; }
 .cockpit-stage { background-color:#0a1924; background-image:linear-gradient(#16303e55 1px,transparent 1px),linear-gradient(90deg,#16303e55 1px,transparent 1px); background-size:36px 36px; }
-.system-header,.overview-stage .monitor-main { background:#0e202d; border:1px solid #365261; box-shadow:none; backdrop-filter:none; border-radius:12px; }
+.system-header,.console-stage .monitor-main { background:#0e202d; border:1px solid #365261; box-shadow:none; backdrop-filter:none; border-radius:12px; }
 .system-header:after,.system-health > svg,.monitor-main:before,.scene-viewport:before { display:none; }
 .brand h1,.header-clock strong,.global-metrics strong { color:#eaf5fa; font-style:normal; text-shadow:none; }
 .brand p { color:#58d5c9; letter-spacing:.22em; }
@@ -1435,7 +1397,6 @@
 .view-indicator,.view-indicator button { color:#b5d4db; }
 .source-modes { background:#0b1c27; border-color:#395c69; }
 .source-modes button[aria-pressed="true"] { background:#8be1d4; color:#092129; }
-.system-footer { color:#94adbd; }
 
 @media (max-width: 900px) {
   .cockpit-viewport { overflow:auto; }
@@ -1470,10 +1431,9 @@
   .monitor-content { display:flex; flex-direction:column; }
   .monitor-content>.scene-viewport { flex:none; height:330px; }
   .monitor-rail { width:100%; }
-  .system-footer { height:auto; flex-wrap:wrap; }
 }
 .overview-panel .radar-minimap > .scene-viewport { flex:1 1 0; min-height:0; width:100%; }
 @media (max-width:900px) {
-  .overview-stage .system-header,.overview-stage .view-tabs { height:auto; }
-  .overview-stage .system-header { flex:none; }
+  .console-stage .system-header,.console-stage .view-tabs { height:auto; }
+  .console-stage .system-header { flex:none; }
 }

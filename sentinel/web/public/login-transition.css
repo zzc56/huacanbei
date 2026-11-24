@@ -1,0 +1,46 @@
+.login-transition {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  background: #14232d;
+  color: #e8f4f3;
+  font: 700 clamp(1.3rem, 3vw, 1.9rem) / 1 system-ui, sans-serif;
+  letter-spacing: 0.24em;
+  transition: opacity 250ms ease-out, visibility 0s linear 250ms;
+}
+
+.login-transition span::after {
+  display: block;
+  width: 2rem;
+  height: 2px;
+  margin: 0.75rem auto 0;
+  background: #92e3ce;
+  content: '';
+}
+
+html[data-login-transition='arriving'] {
+  background: #14232d;
+}
+
+html[data-login-transition] .login-transition {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transition: none;
+}
+
+html[data-login-transition='departing'] .login-transition {
+  transition: opacity 150ms ease-in;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-transition,
+  html[data-login-transition='departing'] .login-transition {
+    transition: none;
+  }
+}

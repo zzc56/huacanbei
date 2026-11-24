@@ -9,6 +9,10 @@ __pycache__/
 .env.*
 !.env.example
 *.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
 .DS_Store
 Thumbs.db
 

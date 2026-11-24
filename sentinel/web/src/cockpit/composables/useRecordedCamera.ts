@@ -30,7 +30,7 @@ export function useRecordedCamera(video: Ref<HTMLVideoElement | null>, enabled?:
       // Live playback may finish one in-flight frame while newer frames arrive.
       // Its boxes come from that exact request, never from the newest store frame.
       if(success&&(latest||request.source==='live')&&
-        (request.source!=='live'||!store.playing&&latest||Date.now()-request.meta.timestamp<=700)){
+        (request.source!=='live'||!store.playing&&latest||Date.now()-request.meta.timestamp<=(request.meta.alignmentDelayMs??0)+700)){
         ready.value={image,targets:request.targets,meta:request.meta};syncVideo();
       }else if(latest)ready.value=null;
       if(!success)image.src='';
@@ -45,7 +45,7 @@ export function useRecordedCamera(video: Ref<HTMLVideoElement | null>, enabled?:
     if(enabled?.value===false){desired=undefined;attemptedUrl='';cancel();ready.value=null;return;}
     if(!m?.imageUrl){
       // 回放首尾以及两次采集之间的空档没有视觉帧，保留上一张图，避免整块画面变白。
-      if(store.frame.source==='live'){desired=undefined;attemptedUrl='';cancel();ready.value=null;}
+      if(store.frame.source==='live'||store.imageReplay){desired=undefined;attemptedUrl='';cancel();ready.value=null;}
       return;
     }
     if(desired && (desired.source!==store.frame.source || m.sequence<desired.meta.sequence)){

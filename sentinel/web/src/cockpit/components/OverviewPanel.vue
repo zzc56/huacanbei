@@ -4,6 +4,7 @@ import type { Target } from '../types';
 import type { ViewMode } from '../renderers/lightScene';
 import { useSceneStore } from '../stores/scene';
 import { measurementStatus } from '../../core/measurementStatus';
+import { targetDisplayName } from '../core/targetLabels';
 import SceneViewport from './SceneViewport.vue';
 import UiIcon from './UiIcon.vue';
 
@@ -16,6 +17,11 @@ const panels = [
 ] as const;
 const radarCount = computed(() => store.frame.targets.filter(t => t.radar).length);
 const cameraCount = computed(() => store.frame.targets.filter(t => t.camera).length);
+const playbackSize = computed(() => {
+  const frame = store.frame.cameraFrame;
+  const video = store.replayVideo;
+  return frame ? `${video?.videoWidth || frame.width} × ${video?.videoHeight || frame.height}` : '—';
+});
 const peak = computed(() => {
   const field = store.frame.riskField;
   if (!field) return null;
@@ -57,7 +63,7 @@ const fieldNote = computed(() => store.frame.live?.fusion.message ?? store.frame
         <footer class="overview-card-footer">
           <template v-if="panel.mode === 'camera'">
             <span>视觉目标 <b>{{ store.frame.cameraFrame ? cameraCount : '—' }}</b></span>
-            <span>画面尺寸 <b>{{ store.frame.cameraFrame ? store.frame.cameraFrame.width + ' × ' + store.frame.cameraFrame.height : '—' }}</b></span>
+            <span>画面尺寸 <b>{{ playbackSize }}</b></span>
             <span v-if="store.frame.source === 'live'" title="从本机解码完成到当前画面显示的耗时，不含摄像头内部编码及取流耗时">本机画面延迟 <b>{{ store.cameraLatencyMs ?? '—' }} <small>ms</small></b></span>
             <span>帧序号 <b>{{ store.frame.cameraFrame?.sequence ?? '—' }}</b></span>
           </template>
@@ -80,18 +86,17 @@ const fieldNote = computed(() => store.frame.live?.fusion.message ?? store.frame
     </div>
     <div class="overview-bottom" :class="{compact: !store.selected}">
       <section v-if="store.selected" class="overview-selection" aria-label="总览选中目标">
-        <div class="overview-selection-title"><UiIcon name="focus" /><div><small>当前选中目标</small><strong>{{ store.selected?.id ?? '未选择目标' }}</strong></div><span>{{ store.selected ? measurement.source : '点击任一画面的目标' }}</span></div>
+        <div class="overview-selection-title"><UiIcon name="focus" /><div><small>当前选中目标</small><strong>{{ targetDisplayName(store.selected) }}</strong></div><span>{{ store.selected ? measurement.source : '点击任一画面的目标' }}</span></div>
         <dl>
           <div><dt>实测距离</dt><dd>{{ store.selected?.radar?.range.toFixed(1) ?? '—' }} <small>m</small></dd></div>
-          <div><dt>合速度</dt><dd>{{ store.selected?.fusion?.speed?.toFixed(2) ?? '—' }} <small>m/s</small></dd></div>
-          <div><dt>位置场值</dt><dd>{{ store.selected?.risk?.value.toFixed(3) ?? '—' }}</dd></div>
+          <div><dt>合速度</dt><dd>{{ store.selectedMeasurement?.fusion?.speed?.toFixed(2) ?? '—' }} <small>m/s</small></dd></div>
+          <div><dt>位置场值</dt><dd>{{ store.selectedMeasurement?.risk?.value.toFixed(3) }}</dd></div>
           <div><dt>视觉置信度</dt><dd>{{ store.selected?.camera ? (store.selected.camera.confidence * 100).toFixed(1) + '%' : '—' }}</dd></div>
         </dl>
       </section>
       <aside class="overview-basis">
         <h3><UiIcon name="layers" :size="17" />风险场说明</h3>
         <p>{{ fieldNote }}</p>
-        <small v-if="store.frame.source === 'live'">视觉与雷达身份尚未联合标定，目标分别展示。</small>
       </aside>
     </div>
   </div>
@@ -152,7 +157,7 @@ const fieldNote = computed(() => store.frame.live?.fusion.message ?? store.frame
 .overview-legend small { display:block; color:#6a8793; font-size:9px; margin-top:7px; text-align:center; }
 .overview-bottom { display:grid; grid-template-columns:1fr 1fr; gap:10px; height:60px; flex-shrink:0; }
 .overview-selection,.overview-basis { border:1px solid #b2d7e1; border-radius:10px; background:#f8fdffb8; padding:6px 12px; }
-.overview-selection-title { display:flex; gap:10px; align-items:center; color:#188d90; }
+.overview-selection-title { display:flex; min-block-size:25px; gap:10px; align-items:center; color:#188d90; }
 .overview-selection-title > div { display:flex; align-items:baseline; gap:13px; }.overview-selection-title small { font-size:11px; color:#5d8296; }
 .overview-selection-title strong { font:700 17px Arial,sans-serif; color:#173e59; }
 .overview-selection-title > span { margin-left:auto; font-size:11px; color:#4b8990; }

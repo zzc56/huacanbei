@@ -3,12 +3,23 @@ import { createPinia, setActivePinia } from 'pinia';
 import fixture from './fixtures/recorded-frame.json';
 import { RealDataAdapter, numeric, normalizeBox, polarToXY, parseRecordedField, sampleField } from './RealDataAdapter';
 import { useSceneStore } from '../cockpit/stores/scene';
+import { targetDisplayName } from '../cockpit/core/targetLabels';
 
 describe('实测数据适配与缺失值',()=>{
   it('CSV 空值、null 和非法数字不是 0，极坐标按 +Y 顺时针',()=>{
     for(const v of ['',null,undefined,'NaN',Infinity,false])expect(numeric(v)).toBeUndefined();
     expect(numeric('0')).toBe(0);
     expect(polarToXY(12,90).x).toBeCloseTo(12);expect(polarToXY(12,180).y).toBeCloseTo(-12);
+  });
+  it('保留超过 255 的雷达编号，并给独立视觉目标使用 W 编号', () => {
+    const sequence = fixture.radar[0];
+    const radar = Array.from({ length: 300 }, (_, id) => ({ ...sequence, track_id: String(id) }));
+    const frame = new RealDataAdapter().parse({
+      ...fixture, snapshot: null, radar, vision: { ...fixture.vision, detections: [fixture.vision.detections[0]] },
+    })!;
+    expect(frame.targets.filter(target => target.radar)).toHaveLength(300);
+    expect(targetDisplayName(frame.targets.find(target => target.id === 'radar:299'))).toBe('车辆 299');
+    expect(targetDisplayName(frame.targets.find(target => target.camera))).toMatch(/ W1$/);
   });
   it('回放真实 8.7 秒记录：原始极坐标、分速度、像素框及共享 ID 一致',()=>{
     const frame=new RealDataAdapter().parse(fixture)!;
@@ -43,7 +54,7 @@ describe('实测数据适配与缺失值',()=>{
       else {expect(f.valid[i]).toBe(0);expect(Number.isNaN(f.values[i])).toBe(true);}
     });
     expect(sampleField(f,-999,0)).toBeUndefined();
-    const t=new RealDataAdapter().parse(fixture)!.targets[0];
+    const t=new RealDataAdapter().parse(fixture)!.targets.find(target=>target.radar)!;
     expect(t.risk!.value).toBeCloseTo(sampleField(f,t.fusion!.x,t.fusion!.y)!);
     expect(parseRecordedField({...fixture.snapshot,field_available:false})).toBeUndefined();
   });
@@ -65,9 +76,12 @@ describe('实测数据适配与缺失值',()=>{
   it('缺失风险不稀释平均值；空场显示未知',()=>{
     setActivePinia(createPinia());const store=useSceneStore();
     expect(store.averageRisk).toBeNull();store.frame=new RealDataAdapter().parse(fixture)!;
-    expect(store.knownRiskTargets).toHaveLength(3);
-    expect(store.averageRisk).toBeCloseTo(store.knownRiskTargets.reduce((s,t)=>s+t.risk!.value,0)/3);
-    store.select('ped:9');expect(store.selected?.fusion?.radialVelocity).toBeNull();
+    expect(store.knownRiskTargets).toHaveLength(1);
+    expect(store.averageRisk).toBeCloseTo(store.knownRiskTargets[0].risk!.value);
+    store.select('ped:9');
+    expect(store.selected?.fusion?.radialVelocity).toBeNull();
+    expect(store.selected?.risk).toBeUndefined();
+    expect(store.selectedMeasurement).toBeUndefined();
   });
   it('回放跳回时清空未来航迹，重复发送同一观测不增长航迹',()=>{
     const a=new RealDataAdapter();a.parse(fixture);const repeat=a.parse(fixture)!;
@@ -75,6 +89,42 @@ describe('实测数据适配与缺失值',()=>{
     const changed=structuredClone(fixture);changed.timestamp+=1000;changed.radar[0].host_received_utc='2026-10-19T04:42:09.117Z';changed.radar[0].range='20';
     expect(a.parse(changed)!.targets.find(t=>t.radar)?.history).toHaveLength(2);
     expect(a.parse(fixture)!.targets.find(t=>t.radar)?.history).toHaveLength(1);
+  });
+
+  it('雷达同号新轨迹使用独立的历史标识和航迹', () => {
+    const adapter = new RealDataAdapter();
+    const first = fixture.timestamp;
+    const parse = (elapsed: number, start?: number) => {
+      const time = first + elapsed;
+      return adapter.parse({
+        ...fixture, timestamp: time, vision: null, snapshot: null,
+        radar: [{ ...fixture.radar[0], host_received_utc: new Date(time).toISOString(), track_start_seq: start }],
+      })!.targets[0];
+    };
+    const old = parse(0, 1);
+    const continued = parse(100, 1);
+    const reused = parse(200, 3);
+    expect(continued.trackInstanceId).toBe(old.trackInstanceId);
+    expect(continued.history).toHaveLength(2);
+    expect(reused.id).toBe(old.id);
+    expect(reused.trackInstanceId).not.toBe(old.trackInstanceId);
+    expect(reused.history).toHaveLength(1);
+
+    const legacyFirst = parse(4000);
+    const legacyNext = parse(5600);
+    expect(legacyNext.trackInstanceId).not.toBe(legacyFirst.trackInstanceId);
+    expect(legacyNext.history).toHaveLength(1);
+  });
+
+  it('回放中独立视觉目标沿用原始跟踪编号，重复编号保留各自检测框', () => {
+    const adapter = new RealDataAdapter();
+    const detection = { ...fixture.vision.detections[0], track_id: 'V00123' };
+    const parse = (sequence: number, detections = [detection]) =>
+      adapter.parse({ ...fixture, snapshot: null, radar: [], vision: { ...fixture.vision, sequence, detections } })!;
+    expect(parse(1).targets[0]?.id).toBe('vision:V00123');
+    expect(parse(2).targets[0]?.id).toBe('vision:V00123');
+    const duplicateTrack = { ...detection, x: String(Number(detection.x) + 150) };
+    expect(parse(3, [detection, duplicateTrack]).targets.map(target => target.id)).toEqual(['vision:3:0', 'vision:3:1']);
   });
   it('有融合状态但场无效时，仍保留独立雷达和全部视觉检测',()=>{
     const frame=new RealDataAdapter().parse({...fixture,snapshot:{status:'no_valid_observations',field_available:false}})!;

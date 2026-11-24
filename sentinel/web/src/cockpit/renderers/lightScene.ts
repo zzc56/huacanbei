@@ -1,5 +1,6 @@
 import type { Target, WorldBounds } from '../types';
 import { cameraGround } from '../core/fusion';
+import { targetDisplayName } from '../core/targetLabels';
 export type ViewMode = 'radar' | 'camera' | 'risk';
 export type PlotBounds = WorldBounds;
 export interface Hit {
@@ -411,6 +412,7 @@ export function cameraTargets(
   mock: boolean,
   box = { x: 0, y: 0, w, h },
   showClassConfidence = false,
+  drawBoxes = true,
 ): Hit[] {
   const hits: Hit[] = [];
   for (const t of [...targets].sort(
@@ -461,11 +463,7 @@ export function cameraTargets(
           c.fillRect(x + bw * sx, y + bh * sy, bw * 0.08, bh * 0.15);
         }
     }
-    const category = t.camera.class;
-    const name = category === 'car' ? 'car'
-      : ['bicycle', 'motorcycle', 'bike'].includes(category) ? 'bike' : undefined;
-    if (showClassConfidence && name) {
-      // Match the original recording's overlaid class, confidence, and thin cyan rectangle.
+    if (showClassConfidence) {
       c.save();
       c.strokeStyle = '#29afe0';
       c.lineWidth = selected ? 1.8 : 1;
@@ -474,11 +472,11 @@ export function cameraTargets(
       c.font = `400 ${size}px "Segoe UI", sans-serif`;
       c.textAlign = 'left';
       c.fillStyle = c.strokeStyle;
-      const label = `${name} ${Math.round(t.camera.confidence * 100)}%`;
+      const label = `${targetDisplayName(t, { showVisualNumber: false })} ${Math.round(t.camera.confidence * 100)}%`;
       const labelX = Math.max(0, Math.min(w - c.measureText(label).width, x));
       c.fillText(label, labelX, Math.max(size, y - 4));
       c.restore();
-    } else {
+    } else if (drawBoxes || selected) {
       c.strokeStyle = color + (selected ? 'ff' : 'b0');
       c.lineWidth = selected ? 1.8 : 1.1;
       c.strokeRect(x - pad, y - pad, bw + pad * 2, bh + pad * 2);
@@ -578,11 +576,11 @@ export function mapTargets(
     c.roundRect(tx, ty - 29, 108, 44, 5);
     c.fill();
     c.restore();
-    text(c, t.id, tx + 9, ty - 12, selected ? color : ink, 13);
+    text(c, targetDisplayName(t), tx + 9, ty - 12, selected ? color : ink, 13);
     text(
       c,
       mode === 'risk'
-        ? '场值 ' + (t.risk?.value.toFixed(2) ?? '未知')
+        ? t.risk ? `场值 ${t.risk.value.toFixed(2)}` : ''
         : (t.radar?.range ?? 0).toFixed(1) + ' m',
       tx + 9,
       ty + 5,

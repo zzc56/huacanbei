@@ -1,0 +1,162 @@
+[
+  {
+    "visualTrackId": "V00238",
+    "radarId": "radar:93",
+    "packetIndices": [49, 50, 51, 52, 53, 54, 55, 56, 57, 58],
+    "samples": 39,
+    "medianResidualPx": 7.9,
+    "p90ResidualPx": 16.6
+  },
+  {
+    "visualTrackId": "V00241",
+    "radarId": "radar:96",
+    "packetIndices": [49, 50, 51, 52, 53, 54, 55, 56],
+    "samples": 26,
+    "medianResidualPx": 7.1,
+    "p90ResidualPx": 22.3
+  },
+  {
+    "visualTrackId": "V00247",
+    "radarId": "radar:102",
+    "packetIndices": [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94],
+    "samples": 31,
+    "medianResidualPx": 4.2,
+    "p90ResidualPx": 8.2
+  },
+  {
+    "visualTrackId": "V00252",
+    "radarId": "radar:101",
+    "packetIndices": [83, 84, 85, 86, 98, 99, 100, 101, 102, 103, 104],
+    "samples": 30,
+    "medianResidualPx": 12.2,
+    "p90ResidualPx": 19.4
+  },
+  {
+    "visualTrackId": "V00259",
+    "radarId": "radar:100",
+    "packetIndices": [106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 130, 132],
+    "samples": 27,
+    "medianResidualPx": 8.6,
+    "p90ResidualPx": 13.5
+  },
+  {
+    "visualTrackId": "V00257",
+    "radarId": "radar:87",
+    "packetIndices": [110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126],
+    "samples": 23,
+    "medianResidualPx": 13.4,
+    "p90ResidualPx": 17.9
+  },
+  {
+    "visualTrackId": "V00265",
+    "radarId": "radar:126",
+    "packetIndices": [135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152],
+    "samples": 18,
+    "medianResidualPx": 7.5,
+    "p90ResidualPx": 10.8
+  },
+  {
+    "visualTrackId": "V00275",
+    "radarId": "radar:120",
+    "packetIndices": [155, 157, 158, 159, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172],
+    "samples": 23,
+    "medianResidualPx": 13.1,
+    "p90ResidualPx": 16.7
+  },
+  {
+    "visualTrackId": "V00278",
+    "radarId": "radar:139",
+    "packetIndices": [163, 164, 165, 166, 169, 170, 171, 172, 173, 174],
+    "samples": 15,
+    "medianResidualPx": 14.6,
+    "p90ResidualPx": 18.4
+  },
+  {
+    "visualTrackId": "V00279",
+    "radarId": "radar:142",
+    "packetIndices": [168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194],
+    "samples": 28,
+    "medianResidualPx": 5.4,
+    "p90ResidualPx": 13.3
+  },
+  {
+    "visualTrackId": "V00281",
+    "radarId": "radar:124",
+    "packetIndices": [181, 184, 185, 186, 187, 188, 189, 190, 191],
+    "samples": 10,
+    "medianResidualPx": 8.8,
+    "p90ResidualPx": 13.3
+  },
+  {
+    "visualTrackId": "V00234",
+    "radarId": "radar:62",
+    "packetIndices": [12, 13, 14, 15],
+    "samples": 4,
+    "medianResidualPx": 12.9,
+    "p90ResidualPx": 15.9
+  },
+  {
+    "visualTrackId": "V00238",
+    "radarId": "radar:93",
+    "packetIndices": [59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 70, 71],
+    "samples": 12,
+    "medianResidualPx": 9.7,
+    "p90ResidualPx": 12.2
+  },
+  {
+    "visualTrackId": "V00256",
+    "radarId": "radar:100",
+    "packetIndices": [96, 97, 98, 99, 100, 101, 102, 103, 104],
+    "samples": 9,
+    "medianResidualPx": 4.8,
+    "p90ResidualPx": 6.7
+  },
+  {
+    "visualTrackId": "V00257",
+    "radarId": "radar:87",
+    "packetIndices": [106, 108, 109],
+    "samples": 3,
+    "medianResidualPx": 14.9,
+    "p90ResidualPx": 17.2
+  },
+  {
+    "visualTrackId": "V00252",
+    "radarId": "radar:101",
+    "packetIndices": [109, 110, 111, 112],
+    "samples": 4,
+    "medianResidualPx": 12.4,
+    "p90ResidualPx": 14.4
+  },
+  {
+    "visualTrackId": "V00265",
+    "radarId": "radar:126",
+    "packetIndices": [134],
+    "samples": 1,
+    "medianResidualPx": 1.5,
+    "p90ResidualPx": 1.5
+  },
+  {
+    "visualTrackId": "V00275",
+    "radarId": "radar:120",
+    "packetIndices": [148, 149, 150, 151, 152, 153, 154, 156, 160],
+    "samples": 9,
+    "medianResidualPx": 7.1,
+    "p90ResidualPx": 10.4
+  },
+  {
+    "visualTrackId": "V00278",
+    "radarId": "radar:139",
+    "packetIndices": [162, 167, 168, 175, 176, 177, 178, 179],
+    "samples": 8,
+    "medianResidualPx": 10.2,
+    "p90ResidualPx": 15.2
+  },
+  {
+    "visualTrackId": "V00281",
+    "radarId": "radar:124",
+    "packetIndices": [178, 192, 193],
+    "samples": 3,
+    "medianResidualPx": 3.0,
+    "p90ResidualPx": 5.1
+  }
+]

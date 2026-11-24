@@ -14,17 +14,22 @@ export function useCanvas(
     const element = canvas.value;
     if (!element) return;
     ctx = element.getContext('2d');
-    observer = new ResizeObserver(() => {
+    const measure = () => {
       width = element.clientWidth;
       height = element.clientHeight;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      element.width = Math.round(width * dpr);
-      element.height = Math.round(height * dpr);
-      ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
-    });
+    };
+    measure();
+    observer = new ResizeObserver(measure);
     observer.observe(element);
     const tick = (now: number) => {
       if (ctx && width && height && now >= nextDraw - 0.7) {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const pixelWidth = Math.round(width * dpr);
+        const pixelHeight = Math.round(height * dpr);
+        // Resizing clears the canvas. Resize and paint together, before the browser presents it.
+        if (element.width !== pixelWidth) element.width = pixelWidth;
+        if (element.height !== pixelHeight) element.height = pixelHeight;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         draw(ctx, width, height);
         nextDraw = Math.max(nextDraw + 1000 / 60, now);
       }

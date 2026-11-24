@@ -4,6 +4,7 @@ export class WebSocketStream implements DataStream {
   private socket?: WebSocket;
   private paused=false;
   private disposed=false;
+  private connecting=false;
   private retry?: ReturnType<typeof setTimeout>;
   private attempts=0;
   private recording=false;
@@ -31,9 +32,16 @@ export class WebSocketStream implements DataStream {
     if(typeof document!=='undefined')document.addEventListener('visibilitychange',this.visible);
   }
   private async connect() {
-    if(this.disposed)return;this.onStatus?.('connecting');
+    if(this.disposed||this.connecting||this.socket?.readyState===WebSocket.CONNECTING||this.socket?.readyState===WebSocket.OPEN)return;
+    this.connecting=true;
+    clearTimeout(this.retry);
+    this.onStatus?.('connecting');
     this.configAbort=new AbortController();
-    try {const r=await fetch(this.base+'/api/config',{signal:this.configAbort.signal});if(r.ok)this.adapter.setConfig(await r.json());}catch{if(this.disposed)return;}
+    try {
+      const signal=AbortSignal.any([this.configAbort.signal,AbortSignal.timeout(3000)]);
+      const r=await fetch(this.base+'/api/config',{signal});
+      if(r.ok)this.adapter.setConfig(await r.json());
+    }catch{}finally{this.connecting=false;}
     if(this.disposed)return;
     try {
       const socket=this.socket=new WebSocket(this.url);
@@ -75,10 +83,10 @@ export class WebSocketStream implements DataStream {
   }
   private visible=()=>{
     if(this.disposed||typeof document==='undefined'||document.visibilityState!=='visible')return;
-    if(this.socket?.readyState===WebSocket.OPEN&&Date.now()-this.lastFrameAt<=4000)return;
+    if(this.socket?.readyState===WebSocket.OPEN){this.guard();return;}
+    if(this.socket?.readyState===WebSocket.CONNECTING||this.socket?.readyState===WebSocket.CLOSING)return;
     this.attempts=0;
-    if(this.socket?.readyState===WebSocket.OPEN)this.socket.close();
-    else {clearTimeout(this.retry);void this.connect();}
+    void this.connect();
   };
   private send(value:unknown){if(this.socket?.readyState===WebSocket.OPEN)this.socket.send(JSON.stringify(value));}
   setPaused(paused:boolean){
@@ -94,15 +102,41 @@ export class WebSocketStream implements DataStream {
 }
 export class ApiStream implements DataStream {
   private timer?:ReturnType<typeof setInterval>;private abort?:AbortController;private paused=false;private disposed=false;private pending=false;private position=0;private last=performance.now();
+  private seekRevision=0;
+  private needsFrame=true;
   constructor(private url:string){}
   setPaused(value:boolean){this.paused=value;this.last=performance.now();}
-  seek(value:number){this.position=Math.max(0,value);}
+  seek(value:number){
+    if(!Number.isFinite(value))return;
+    this.position=Math.max(0,value);
+    this.last=performance.now();
+    this.seekRevision++;
+    this.needsFrame=true;
+    this.abort?.abort();
+  }
   start(onFrame:(frame:Frame)=>void,status:(state:ConnectionState)=>void){
-    const adapter=new RealDataAdapter(this.url);let initial=true;
+    const adapter=new RealDataAdapter(this.url);
     const poll=async()=>{
       const now=performance.now();if(!this.paused)this.position+=now-this.last;this.last=now;
-      if(this.pending||this.paused&&!initial)return;this.pending=true;this.abort=new AbortController();
-      try{const url=new URL(this.url,window.location.href);url.searchParams.set('timeMs',String(this.position));const r=await fetch(url,{signal:this.abort.signal});if(!r.ok)throw Error('HTTP');const frame=adapter.parse(await r.json());if(!frame)throw Error('Frame');if(!this.disposed){onFrame(frame);status(frame.source==='recording'?'replay':'connected');initial=false;}}catch{if(!this.disposed)status('error');}finally{this.pending=false;}
+      if(this.pending||this.paused&&!this.needsFrame)return;
+      this.pending=true;
+      const request=this.abort=new AbortController();
+      const revision=this.seekRevision;
+      try{
+        const url=new URL(this.url,window.location.href);
+        url.searchParams.set('timeMs',String(this.position));
+        const response=await fetch(url,{signal:request.signal});
+        if(!response.ok)throw Error('HTTP');
+        const packet=await response.json();
+        if(this.disposed||revision!==this.seekRevision)return;
+        const frame=adapter.parse(packet);
+        if(!frame)throw Error('Frame');
+        this.needsFrame=false;
+        onFrame(frame);
+        status(frame.source==='recording'?'replay':'connected');
+      }catch{
+        if(!this.disposed&&!request.signal.aborted)status('error');
+      }finally{this.pending=false;}
     };
     status('connecting');void poll();this.timer=setInterval(()=>void poll(),100);
   }

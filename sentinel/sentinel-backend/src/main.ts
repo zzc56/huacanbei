@@ -1,4 +1,12 @@
 import { buildApp } from './app.js';
+import { fileURLToPath } from 'node:url';
+
+try {
+  process.loadEnvFile(fileURLToPath(new URL('../../.env', import.meta.url)));
+} catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+}
+
 const port = Number(process.env['PORT'] ?? 3001);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT');
 const app = buildApp();

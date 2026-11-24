@@ -1,30 +1,58 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, ref, shallowRef, watch } from 'vue';
 import { useSceneStore } from './stores/scene';
 import { useScene } from './composables/useScene';
 import StatusBar from './components/StatusBar.vue';
+import LiveControls from './components/LiveControls.vue';
 import TargetInspector from './components/TargetInspector.vue';
 import SceneViewport from './components/SceneViewport.vue';
 import OverviewPanel from './components/OverviewPanel.vue';
+import ReplayImport from './components/ReplayImport.vue';
+import ReplayLibrary from './components/ReplayLibrary.vue';
 import UiIcon from './components/UiIcon.vue';
+import { targetDisplayName } from './core/targetLabels';
 import type { ViewMode } from './renderers/lightScene';
 import type { MonitorSource } from './services/stream';
+import type { ReplayRecording } from './data/bundledReplay';
 import './styles.css';
 import './field-console.css';
-const DrivingDemo = defineAsyncComponent(() => import('./components/DrivingDemo.vue'));
-const LiveOverview = defineAsyncComponent(() => import('./components/LiveOverview.vue'));
-const props = defineProps<{ source: MonitorSource }>();
+const props = defineProps<{ source: MonitorSource; bundledReplay?: boolean }>();
 const emit = defineEmits<{ changeSource: [source: MonitorSource] }>();
+const imported = shallowRef<ReplayRecording>();
+const replayName = computed(() => {
+  const current = imported.value;
+  return current?.name ?? (current && 'video' in current ? current.video.name : props.bundledReplay ? '内置演示' : '回放服务');
+});
+function applyReplay(recording: ReplayRecording) {
+  imported.value = recording;
+}
+function showDemo() {
+  imported.value = undefined;
+  emit('changeSource', 'recording');
+}
 const sources = [
   { id: 'live', label: '实时连接' },
   { id: 'recording', label: '历史回放' },
 ] as const;
 const store = useSceneStore(),
-  { renderTargets, time } = useScene(props.source);
+  { renderTargets, time } = useScene(() => ({
+    source: props.source,
+    bundledReplay: props.bundledReplay,
+    imported: props.source === 'recording' ? imported.value : undefined,
+  }));
+const replayDragPosition = ref<number>();
+const replayPosition = computed(() => replayDragPosition.value ?? store.frame.replay?.positionMs ?? 0);
+const replayProgress = computed(() => {
+  const duration = store.frame.replay?.durationMs ?? 0;
+  return duration > 0 ? Math.min(100, replayPosition.value / duration * 100) : 0;
+});
+function seekReplay(event: Event) {
+  store.seek((event.target as HTMLInputElement).valueAsNumber);
+  replayDragPosition.value = undefined;
+}
+watch(() => store.replayVideo, () => { replayDragPosition.value = undefined; });
 const mode = ref<ViewMode | 'overview'>('overview'),
-  filter = ref('all'),
-  scale = ref(1),
-  offset = ref({ x: 0, y: 0 });
+  filter = ref('all');
 const tabs = [
   { id: 'overview', name: '总览', en: 'OVERVIEW' },
   { id: 'radar', name: '雷达探测', en: 'RADAR PPI' },
@@ -55,7 +83,8 @@ const targets = computed(() =>
       const v = t.risk?.value;
       if (mode.value === 'camera')
         return !!t.camera && (filter.value === 'all' || t.camera.class === filter.value);
-      if(mode.value === 'radar' && !t.radar || mode.value === 'risk' && !t.fusion)return false;
+      if (mode.value === 'radar' && !t.radar) return false;
+      if (mode.value === 'risk' && (!t.fusion || (store.usesRadarMeasurements && !t.radar))) return false;
       return (
         filter.value === 'all' ||
         v !== undefined && (filter.value === 'high'
@@ -67,69 +96,65 @@ const targets = computed(() =>
     })
     .sort((a, b) => (b.risk?.value ?? 0) - (a.risk?.value ?? 0)),
 );
-function resize() {
-  scale.value = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
-  offset.value = {
-    x: (window.innerWidth - 1920 * scale.value) / 2,
-    y: (window.innerHeight - 1080 * scale.value) / 2,
-  };
-}
-onMounted(() => {
-  resize();
-  window.addEventListener('resize', resize);
-});
-onUnmounted(() => window.removeEventListener('resize', resize));
 </script>
 <template>
   <main class="cockpit-viewport">
-    <div
-      class="cockpit-stage"
-      :class="{ 'overview-stage': mode === 'overview' }"
-      :style="{ transform: `translate(${offset.x}px,${offset.y}px) scale(${scale})` }"
-    >
-      <StatusBar />
-      <div class="monitor-layout" :class="{ 'overview-layout': mode === 'overview' }">
+    <div class="cockpit-stage console-stage">
+      <StatusBar><LiveControls v-if="source === 'live'" /></StatusBar>
+      <div class="monitor-toolbar">
+        <div class="view-tabs" role="tablist" aria-label="感知视图">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            :class="{ active: mode === tab.id }"
+            role="tab"
+            :aria-selected="mode === tab.id"
+            @click="mode = tab.id"
+          >
+            <UiIcon
+              :name="tab.id === 'overview' ? 'layers' : tab.id === 'camera' ? 'camera' : tab.id === 'radar' ? 'radar' : 'risk'"
+            /><span>{{ tab.name }}</span
+            >
+          </button>
+        </div>
+        <div class="view-indicator">
+          <div v-if="source === 'recording'" class="replay-source">
+            <span class="replay-name" :title="replayName">{{ replayName }}</span>
+            <ReplayImport @imported="applyReplay" />
+            <button v-if="imported || !bundledReplay" class="replay-demo-button" type="button" @click="showDemo">演示数据</button>
+          </div>
+          <ReplayLibrary :source="source" :current="imported" :bundled="bundledReplay" :name="replayName" @play="applyReplay" />
+          <div v-if="source === 'recording' && store.frame.replay" class="replay-timeline">
+            <input
+              type="range"
+              aria-label="实测回放进度"
+              min="0"
+              :max="store.frame.replay.durationMs"
+              step="100"
+              :value="replayPosition"
+              :style="{ '--replay-progress': `${replayProgress}%` }"
+              @input="replayDragPosition = ($event.target as HTMLInputElement).valueAsNumber"
+              @change="seekReplay"
+              @blur="replayDragPosition = undefined"
+            />
+            <span>{{ (replayPosition / 1000).toFixed(1) }} / {{ (store.frame.replay.durationMs / 1000).toFixed(1) }} s</span>
+            <button type="button" aria-label="从头回放" @click="store.seek(0)">↺</button>
+          </div>
+          <div class="source-modes" role="group" aria-label="数据模式">
+            <button
+              v-for="item in sources"
+              :key="item.id"
+              type="button"
+              :aria-pressed="source === item.id"
+              @click="emit('changeSource', item.id)"
+            >{{ item.label }}</button>
+          </div>
+        </div>
+      </div>
+      <div class="monitor-layout" :class="mode === 'overview' ? 'overview-layout' : 'detail-layout'">
         <TargetInspector v-if="mode !== 'overview'" />
         <section class="monitor-main glass-panel">
-          <div class="monitor-toolbar">
-            <div class="view-tabs" role="tablist" aria-label="感知视图">
-              <button
-                v-for="tab in tabs"
-                :key="tab.id"
-                :class="{ active: mode === tab.id }"
-                role="tab"
-                :aria-selected="mode === tab.id"
-                @click="mode = tab.id"
-              >
-                <UiIcon
-                  :name="tab.id === 'overview' ? 'layers' : tab.id === 'camera' ? 'camera' : tab.id === 'radar' ? 'radar' : 'risk'"
-                /><span>{{ tab.name }}</span
-                >
-              </button>
-            </div>
-            <div class="view-indicator">
-              <div class="source-modes" role="group" aria-label="数据模式">
-                <button
-                  v-for="item in sources"
-                  :key="item.id"
-                  type="button"
-                  :aria-pressed="source === item.id"
-                  @click="emit('changeSource', item.id)"
-                >{{ item.label }}</button>
-              </div>
-              <template v-if="store.frame.replay">
-                <input type="range" aria-label="实测回放进度" min="0" :max="store.frame.replay.durationMs" step="100" :value="store.frame.replay.positionMs" @change="store.seek(Number(($event.target as HTMLInputElement).value))" style="width:130px;accent-color:#008e8c" />
-                <span>{{ (store.frame.replay.positionMs/1000).toFixed(1) }} / {{ (store.frame.replay.durationMs/1000).toFixed(1) }} s</span>
-                <button aria-label="从头回放" @click="store.seek(0)">↺</button>
-              </template>
-            </div>
-          </div>
-          <template v-if="mode === 'overview'">
-            <DrivingDemo v-if="source === 'live' && !store.liveCameraReady && store.connection !== 'mock'" />
-            <LiveOverview v-else-if="source === 'live' && store.liveCameraReady"
-              :targets="renderTargets" :time="time" @open="mode = $event" />
-            <OverviewPanel v-else :targets="renderTargets" :time="time" @open="mode = $event" />
-          </template>
+          <OverviewPanel v-if="mode === 'overview'" :targets="renderTargets" :time="time" @open="mode = $event" />
           <div v-else class="monitor-content">
             <SceneViewport :mode="mode" :targets="renderTargets" :time="time" />
             <aside class="monitor-rail">
@@ -169,8 +194,14 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                       >雷达目标<b>{{ store.frame.targets.filter((t) => t.radar).length }}</b></span
                     >
                     <template v-if="store.frame.live">
-                      <span>连接状态<b>{{ store.frame.live.radar.state==='streaming' ? '实物雷达在线' : store.frame.live.radar.error==='EADDRNOTAVAIL' ? '雷达网卡未就绪' : store.frame.live.radar.state==='stale' ? '数据超时' : '连接中 / 断开' }}</b></span>
-                      <span>设备地址<b>{{ store.frame.live.radar.endpoint }}</b></span>
+                      <span>连接状态<b>{{
+                        store.frame.live.radar.state === 'streaming' ? '实物雷达在线'
+                          : store.frame.live.radar.state === 'unconfigured' ? '请在雷达设置填写设备地址'
+                          : store.frame.live.radar.state === 'awaiting-data' ? '等待雷达报文'
+                          : store.frame.live.radar.error === 'EADDRNOTAVAIL' ? '雷达网卡未就绪'
+                          : store.frame.live.radar.state === 'stale' ? '数据超时' : '连接中 / 断开'
+                      }}</b></span>
+                      <span>设备地址<b>{{ store.frame.live.radar.endpoint || '—' }}</b></span>
                       <span>接收周期<b>{{ store.frame.live.radar.cycles }}</b></span>
                       <span>累计目标记录<b>{{ store.frame.live.radar.totalTargets }}</b></span>
                       <span>数据新鲜度<b>{{ store.frame.live.radar.ageMs===null ? '—' : store.frame.live.radar.ageMs+' ms' }}</b></span>
@@ -194,8 +225,9 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                     <span
                       >观测源<b>{{ store.frame.live ? '网络摄像头 · '+(store.frame.live.camera.state==='streaming'?'实时':'待连接') : store.frame.source==='recording' ? '实测录像' : store.videoSource.type.toUpperCase() }}</b></span
                     ><span
-                      >{{ store.frame.source==='recording' ? '原始检测记录' : '融合目标' }}<b>{{
-                        store.frame.recordingCounts?.detections ?? store.frame.targets.filter((t) => t.camera && t.radar).length
+                      >{{ store.frame.source==='live' ? '雷视关联' : store.frame.source==='recording' ? '原始检测记录' : '融合目标' }}<b>{{
+                        store.frame.source==='live' && store.frame.live?.association?.state !== 'active' ? '—'
+                          : store.frame.recordingCounts?.detections ?? store.frame.targets.filter((t) => t.camera && t.radar).length
                       }}</b></span
                     ><span
                       >选中置信度<b>{{
@@ -233,7 +265,7 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                       mid: (target.risk?.value ?? 0) >= 0.4 && (target.risk?.value ?? 0) < 0.75,
                     }"
                     :aria-pressed="store.selectedId === target.id"
-                    :aria-label="'选择目标 ' + target.id"
+                    :aria-label="'选择目标 ' + targetDisplayName(target)"
                     @click="store.select(target.id)"
                   >
                     <span class="target-row-icon"
@@ -252,7 +284,7 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                         :size="24" /></span
                     ><span class="target-row-body"
                       ><b
-                        >{{ target.id
+                        >{{ targetDisplayName(target)
                         }}<small>{{
                           !target.risk ? '未知' : target.risk.value >= 0.75
                             ? '高风险'
@@ -261,9 +293,9 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                               : '低风险'
                         }}</small></b
                       ><span
-                        ><strong>{{ mode==='camera' && target.camera ? (target.camera.confidence*100).toFixed(1)+'%' : target.risk?.value.toFixed(2) ?? '—' }}</strong
+                        ><strong>{{ mode==='camera' && target.camera ? (target.camera.confidence*100).toFixed(1)+'%' : target.risk?.value.toFixed(2) }}</strong
                         ><small>{{
-                          mode==='camera' ? target.camera?.class : target.autoAssociation ? '自动关联 · 待确认' : target.radar ? (target.camera ? '已融合' : '仅雷达') : '仅视觉'
+                          mode==='camera' ? target.camera?.class : target.autoAssociation?.status === 'matched' || target.autoAssociation?.method === 'offline-trajectory-fit' ? '雷视关联' : target.autoAssociation ? '暂定轨迹关联' : target.radar ? (target.camera ? '已融合' : '仅雷达') : '仅视觉'
                         }}</small></span
                       ></span
                     ><UiIcon name="chevron" :size="15" />
@@ -279,13 +311,6 @@ onUnmounted(() => window.removeEventListener('resize', resize));
           </div>
         </section>
       </div>
-      <footer class="system-footer">
-        <span><i class="live-dot" />SENTINEL</span
-        ><span
-          >{{ store.frame.northCalibrated===false ? '传感器局部 XY · 北向待现场标定' : '本地 ENU · 正北 0°' }} <i />
-          {{ store.frame.source==='recording' ? '历史实测 · 主机 UTC 对齐' : store.connection === 'mock' ? '模拟数据 · 10 Hz' : '实时接口数据' }}</span
-        >
-      </footer>
     </div>
   </main>
 </template>

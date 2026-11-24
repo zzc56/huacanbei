@@ -57,6 +57,12 @@ export function sampleField(field: ScalarField | undefined, x: number, y: number
   for (let i=0;i<4;i++) { if(weights[i]<1e-9)continue; if(!field.valid[ids[i]] || !Number.isFinite(field.values[ids[i]]))return; result += weights[i]*field.values[ids[i]]; }
   return result;
 }
+
+export function sampleTargetRisk(field: ScalarField | undefined, x: number, y: number): Target['risk'] {
+  const value = sampleField(field, x, y);
+  return value === undefined ? undefined : { value, level: level(value) };
+}
+
 export function normalizeBox(v: unknown, width: number, height: number, pixels = true): [number, number, number, number] | undefined {
   const b = array(v).map(numeric);
   if (b.length !== 4 || b.some(x => x === undefined) || width <= 0 || height <= 0) return;
@@ -67,6 +73,41 @@ export function normalizeBox(v: unknown, width: number, height: number, pixels =
   if (right <= left || bottom <= top) return;
   return [left,top,right-left,bottom-top];
 }
+
+type CameraDetection = {
+  index: number;
+  data: Obj;
+  bbox: NonNullable<Target['camera']>['bbox'];
+  confidence: number;
+};
+
+function geometricallyDuplicate(a: CameraDetection['bbox'], b: CameraDetection['bbox']) {
+  const [ax, ay, aw, ah] = a;
+  const [bx, by, bw, bh] = b;
+  const width = Math.max(0, Math.min(ax + aw, bx + bw) - Math.max(ax, bx));
+  const height = Math.max(0, Math.min(ay + ah, by + bh) - Math.max(ay, by));
+  const intersection = width * height;
+  return intersection >= 0.95 * (aw * ah + bw * bh - intersection);
+}
+
+function uniqueCameraDetections(raw: unknown, width: number, height: number): CameraDetection[] {
+  const detections: CameraDetection[] = [];
+  array(raw).slice(0, 256).forEach((value, index) => {
+    const data = obj(value);
+    const bbox = normalizeBox([data.x, data.y, data.width, data.height], width, height);
+    const confidence = numeric(data.score);
+    if (!bbox || confidence === undefined || confidence < 0 || confidence > 1) return;
+    detections.push({ index, data, bbox, confidence });
+  });
+  detections.sort((a, b) => b.confidence - a.confidence || a.index - b.index);
+  const retained: CameraDetection[] = [];
+  for (const detection of detections) {
+    if (!retained.some((previous) => geometricallyDuplicate(previous.bbox, detection.bbox))) retained.push(detection);
+  }
+  // Saved links and replay packets reference the detector's original row index.
+  return retained.sort((a, b) => a.index - b.index);
+}
+
 function project(h: unknown, u: number, v: number) {
   const m = array(h).map(numeric);
   if (m.length !== 9 || m.some(n => n === undefined)) return;
@@ -80,10 +121,20 @@ function bounds(v: unknown): WorldBounds | undefined {
   return {xMin:a[0]!,xMax:a[1]!,yMin:a[2]!,yMax:a[3]!};
 }
 export class RealDataAdapter {
-  private history = new Map<string,{time:number;points:{x:number;y:number}[]}>();
+  private history = new Map<string, { time: number; instance?: string; points: { x: number; y: number }[] }>();
   private last = -Infinity;
   private config: Obj = {};
+  private readonly visualNumbers = new Map<string, number>();
+  private nextVisualNumber = 1;
   constructor(private baseUrl = 'http://127.0.0.1:3001/') {}
+
+  private numberVisualTrack(id: string) {
+    const existing = this.visualNumbers.get(id);
+    if (existing !== undefined) return existing;
+    const number = this.nextVisualNumber++;
+    this.visualNumbers.set(id, number);
+    return number;
+  }
   setConfig(value: unknown) { this.config = obj(value); }
   private url(value: unknown): string | undefined {
     if(typeof value!=='string'||!value)return;
@@ -98,13 +149,23 @@ export class RealDataAdapter {
     return this.backend(r);
   }
   private trails(frame: FrameData) {
-    if(frame.timestamp<this.last)this.history.clear(); this.last=frame.timestamp;
-    for(const t of frame.targets) {
-      if(!t.fusion)continue;
-      const time=t.observationTimestamp ?? frame.timestamp, cached=this.history.get(t.id), prev=cached && time-cached.time<=1500 ? cached : undefined;
-      const points=prev?.points ?? [];
-      if(!prev || time>prev.time) { points.unshift({x:t.fusion.x,y:t.fusion.y}); if(points.length>40)points.pop(); this.history.set(t.id,{time,points}); }
-      t.history=points.slice();
+    if (frame.timestamp < this.last) this.history.clear();
+    this.last = frame.timestamp;
+    for (const target of frame.targets) {
+      if (!target.fusion) continue;
+      const time = numeric(target.observationTimestamp) ?? frame.timestamp;
+      const cached = this.history.get(target.id);
+      const supplied = target.trackInstanceId;
+      const previous = cached && (supplied ? cached.instance === supplied : time - cached.time <= 1500)
+        ? cached : undefined;
+      if (target.radar) target.trackInstanceId = supplied ?? previous?.instance ?? `${target.id}@${time}`;
+      const points = previous?.points ?? [];
+      if (!previous || time > previous.time) {
+        points.unshift({ x: target.fusion.x, y: target.fusion.y });
+        if (points.length > 40) points.pop();
+        this.history.set(target.id, { time, instance: target.trackInstanceId, points });
+      }
+      target.history = points.slice();
     }
     for(const [id,h] of this.history)if(frame.timestamp-h.time>30000)this.history.delete(id);
     return frame;
@@ -122,51 +183,91 @@ export class RealDataAdapter {
     const associationValid=association.calibration_valid===true && numeric(association.vision_sequence)===numeric(vision.sequence)
       && timestamp(association.observation_utc)<=time && timestamp(association.valid_until_utc)>=time;
     const pedestrianSource=associationValid ? association : s;
-    for(const source of ['radar_objects','pedestrians']) for(const value of array((source==='pedestrians'?pedestrianSource:s)[source]).slice(0,256)) {
+    for (const source of ['radar_objects', 'pedestrians']) {
       // When supplied, the raw radar list is authoritative (including an empty list).
       // Aligned/predicted fusion positions must not replace measured range and angle.
-      if(source==='radar_objects' && Array.isArray(raw.radar))continue;
-      const r=obj(value), x=numeric(r.x), y=numeric(r.y);
-      if(typeof r.id!=='string'||x===undefined||y===undefined)continue;
-      const f=position(x,y,r.velocity_known===true?numeric(r.vx):undefined,r.velocity_known===true?numeric(r.vy):undefined);
-      const t:Target={id:r.id,kind:typeof r.kind==='string'?r.kind:undefined,measurementSource:source==='radar_objects'?'radar':'recorded-vision',fusion:f,observationTimestamp:timestamp(r.observed_utc)};
-      if(source==='radar_objects') t.radar={range:Math.hypot(x,y),azimuth:f.azimuth,radialVelocity:f.radialVelocity};
-      const risk=sampleField(field,x,y); if(risk!==undefined){t.risk={value:risk,level:level(risk)};t.riskBasis='sampled-field';}
-      targets.push(t);
+      if (source === 'radar_objects' && Array.isArray(raw.radar)) continue;
+      const rows = source === 'pedestrians' ? array(pedestrianSource.pedestrians).slice(0, 256) : array(s.radar_objects);
+      for (const value of rows) {
+        const r = obj(value), x = numeric(r.x), y = numeric(r.y);
+        if (typeof r.id !== 'string' || x === undefined || y === undefined) continue;
+        const fusion = position(x, y, r.velocity_known === true ? numeric(r.vx) : undefined, r.velocity_known === true ? numeric(r.vy) : undefined);
+        const target: Target = {
+          id: r.id, kind: typeof r.kind === 'string' ? r.kind : undefined, fusion,
+          measurementSource: source === 'radar_objects' ? 'radar' : 'recorded-vision',
+          observationTimestamp: timestamp(r.observed_utc),
+        };
+        if (source === 'radar_objects') {
+          target.radar = { range: Math.hypot(x, y), azimuth: fusion.azimuth, radialVelocity: fusion.radialVelocity };
+          const risk = sampleTargetRisk(field, x, y);
+          if (risk) { target.risk = risk; target.riskBasis = 'sampled-field'; }
+        }
+        targets.push(target);
+      }
     }
     // Always ingest independent radar detections, even with an unavailable risk field.
-    for(const value of array(raw.radar).slice(0,256)) {
+    const radarSession = numeric(obj(raw.live).startedAt);
+    const radarById = new Map<string, Target>();
+    for(const value of array(raw.radar)) {
       const r=obj(value), range=numeric(r.range), azimuth=numeric(r.angle);
       const observed=timestamp(r.host_received_utc);
       if(range===undefined||azimuth===undefined||range<0||r.track_id===undefined||!Number.isFinite(observed)||observed>time||time-observed>1500)continue;
       const p=polarToXY(range,azimuth),f=position(p.x,p.y,numeric(r.vx_lateral),numeric(r.vy_longitudinal));
-      const t:Target={id:'radar:'+String(r.track_id),measurementSource:'radar',fusion:f,radar:{range,azimuth,radialVelocity:f.radialVelocity,rcs:numeric(r.rcs),sequence:numeric(r.target_seq)},observationTimestamp:observed};
-      const risk=sampleField(field,p.x,p.y);if(risk!==undefined){t.risk={value:risk,level:level(risk)};t.riskBasis='sampled-field';}
-      const previous=targets.findIndex(target=>target.id===t.id);
-      if(previous<0)targets.push(t);else if((targets[previous].observationTimestamp??-Infinity)<=observed)targets[previous]=t;
+      const id = 'radar:' + String(r.track_id);
+      const trackStart = numeric(r.track_start_seq);
+      const t: Target = {
+        id, measurementSource: 'radar', fusion: f, observationTimestamp: observed,
+        radar: { range, azimuth, radialVelocity: f.radialVelocity, rcs: numeric(r.rcs), sequence: numeric(r.target_seq), trackStart },
+      };
+      if (trackStart !== undefined) t.trackInstanceId = `${id}@${radarSession ?? 'recording'}:${trackStart}`;
+      const risk=sampleTargetRisk(field,p.x,p.y);if(risk){t.risk=risk;t.riskBasis='sampled-field';}
+      const previous = radarById.get(id);
+      if ((previous?.observationTimestamp ?? -Infinity) <= observed) radarById.set(id, t);
     }
+    for (const target of radarById.values()) targets.push(target);
     const width=numeric(vision.width) ?? 800,height=numeric(vision.height) ?? 448;
+    const isLive=raw.type==='live_frame';
+    const live=obj(raw.live),liveAssociation=obj(live.association);
+    const alignmentDelayMs = isLive && liveAssociation.state === 'active'
+      ? Math.max(0, Math.min(5000, numeric(vision.alignmentDelayMs) ?? 0)) : 0;
     const used=new Set<string>();
     const vehicleLinks=new Map<number,Obj>();
     for(const value of array(vision.vehicleLinks)){
       const link=obj(value),index=numeric(link.detectionIndex);
       if(index!==undefined&&Number.isInteger(index)&&index>=0&&!vehicleLinks.has(index))vehicleLinks.set(index,link);
     }
-    array(vision.detections).slice(0,256).forEach((value,i)=>{
+    const detections = uniqueCameraDetections(vision.detections, width, height);
+    const recordedTracks = new Map<string, number>();
+    if (!isLive) for (const { data } of detections) {
+      const track = data.track_id;
+      if (typeof track === 'string') recordedTracks.set(track, (recordedTracks.get(track) ?? 0) + 1);
+    }
+    detections.forEach(({ index: i, data: d, bbox, confidence }) => {
       const observed=timestamp(vision.captured_utc);
-      if(raw.type==='live_frame'&&(!Number.isFinite(observed)||time-observed>1500||observed>time+500))return;
-      const d=obj(value), bbox=normalizeBox([d.x,d.y,d.width,d.height],width,height), confidence=numeric(d.score);
-      if(!bbox||confidence===undefined||confidence<0||confidence>1)return;
+      if(isLive&&(!Number.isFinite(observed)||time-observed>1500+alignmentDelayMs||observed>time+500))return;
       const category=String(d.label ?? 'unknown').toLowerCase();
-      const liveTrack=raw.type==='live_frame'&&typeof d.track_id==='string'&&/^V\d{1,12}$/.test(d.track_id)?d.track_id:undefined;
+      const reportedTrack=typeof d.track_id==='string'&&/^V\d{1,12}$/.test(d.track_id)?d.track_id:undefined;
+      const liveTrack=isLive?reportedTrack:undefined;
       const link=vehicleLinks.get(i)??{},camera={bbox,class:category,confidence,sequence:numeric(vision.sequence),detectionIndex:i,
-        trackId:liveTrack??(typeof link.visualTrackId==='string'?link.visualTrackId:undefined)};
+        trackId:liveTrack??(typeof link.visualTrackId==='string'?link.visualTrackId:reportedTrack)};
       const score=numeric(link.score),samples=numeric(link.samples),corr=numeric(link.correlation),distance=numeric(link.medianDistance),recordedAge=numeric(link.radarAgeMs);
       const radarTarget=targets.find(t=>t.id===link.radarId&&t.radar&&!used.has(t.id));
       const cameraTime=timestamp(vision.captured_utc),radarAge=time-(radarTarget?.observationTimestamp??-Infinity),delta=Math.abs((radarTarget?.observationTimestamp??-Infinity)-cameraTime);
+      const distanceM = numeric(link.distanceM), timeDeltaMs = numeric(link.timeDeltaMs);
+      if (isLive && liveAssociation.state === 'active' && radarTarget && liveTrack && link.visualTrackId === liveTrack &&
+        numeric(link.radarTrackStart) === radarTarget.radar?.trackStart &&
+        link.method === 'live-calibrated-position-v1' && distanceM !== undefined && distanceM >= 0 && distanceM <= 3 &&
+        timeDeltaMs !== undefined && timeDeltaMs >= 0 && timeDeltaMs <= 500) {
+        radarTarget.camera = camera;
+        radarTarget.kind = category;
+        radarTarget.autoAssociation = { method: 'live-calibrated-position-v1', status: 'matched', radarId: radarTarget.id,
+          visualTrackId: liveTrack, distanceM, timeDeltaMs, radarAgeMs: radarAge };
+        used.add(radarTarget.id);
+        return;
+      }
       // This is an algorithmic identity hypothesis; kinematics stay on the original
       // radar observation and are never fabricated from bbox pixels.
-      if(['car','truck','bus'].includes(category)&&radarTarget&&link.method==='trajectory-geometry-v1'&&['tentative','held'].includes(String(link.status))
+      if(!isLive&&['car','truck','bus'].includes(category)&&radarTarget&&link.method==='trajectory-geometry-v1'&&['tentative','held'].includes(String(link.status))
         &&typeof link.visualTrackId==='string'&&score!==undefined&&score>=.7&&score<=1&&samples!==undefined&&Number.isInteger(samples)&&samples>=3
         &&corr!==undefined&&corr>=.65&&corr<=1&&distance!==undefined&&distance>=0&&distance<=8
         &&recordedAge!==undefined&&recordedAge>=0&&recordedAge<=1500&&radarAge>=0&&radarAge<=1500&&delta<=1500&&cameraTime<=time&&time-cameraTime<=1500){
@@ -180,31 +281,41 @@ export class RealDataAdapter {
       // Pedestrian identity still uses the original saved same-frame mapping.
       const match=associationValid && category==='person' && p
         ? targets.find(t=>t.id.startsWith('ped:')&&!used.has(t.id)&&t.fusion&&Math.hypot(t.fusion.x-p.x,t.fusion.y-p.y)<0.05) : undefined;
-      if(match){match.camera=camera;used.add(match.id);}
+      if(match){match.camera=camera;match.visualNumber=this.numberVisualTrack(match.id);used.add(match.id);}
       else {
-        const id=liveTrack?`vision:${liveTrack}`:`vision:${vision.sequence}:${i}`;
-        if(!targets.some(t=>t.id===id))targets.push({id,kind:category,measurementSource:'vision-only',camera,observationTimestamp:timestamp(vision.captured_utc)});
+        const track = liveTrack ?? (reportedTrack && recordedTracks.get(reportedTrack) === 1 ? reportedTrack : undefined);
+        const id=track?`vision:${track}`:`vision:${vision.sequence}:${i}`;
+        if(!targets.some(t=>t.id===id))targets.push({id,kind:category,measurementSource:'vision-only',camera,
+          visualNumber:this.numberVisualTrack(id),observationTimestamp:timestamp(vision.captured_utc)});
       }
     });
     const replay=obj(raw.replay);
     const counts=obj(context.counts);
-    const isLive=raw.type==='live_frame';
     const frame:FrameData={timestamp:time,source:isLive?'live':'recording',targets,riskField:field,
       bounds:bounds(context.bounds),radarRange:numeric(context.radarRange)??100,northCalibrated:context.northCalibrated===true,
-      fps:numeric(context.dispatchHz)??10,message:typeof s.message==='string'?s.message:isLive?'实时融合尚未就绪':'当前时刻无有效融合快照，风险未知'};
-    if(!isLive)frame.replay={positionMs:numeric(replay.positionMs)??0,durationMs:numeric(replay.durationMs)??0,ended:replay.ended===true};
+      fps:numeric(context.dispatchHz)??10,message:typeof s.message==='string'?s.message:isLive?'等待实时雷达数据':'当前时刻无有效融合快照，风险未知'};
+    if (!isLive) {
+      frame.replay = { positionMs: numeric(replay.positionMs) ?? 0, durationMs: numeric(replay.durationMs) ?? 0, ended: replay.ended === true };
+      const calibrated = s.calibration_valid === true || associationValid;
+      frame.replayAssociation = calibrated
+        ? (Array.isArray(vision.vehicleLinks) ? 'evaluated' : 'not-provided')
+        : 'missing-calibration';
+    }
     if(isLive){
-      const live=obj(raw.live),radar=obj(live.radar),camera=obj(live.camera),fusion=obj(live.fusion);
+      const radar=obj(live.radar),camera=obj(live.camera),fusion=obj(live.fusion);
       frame.live={startedAt:numeric(live.startedAt)??time,
         radar:{state:String(radar.state??'unknown'),endpoint:String(radar.endpoint??''),bytes:numeric(radar.bytes)??0,
           cycles:numeric(radar.cycles)??0,completeCycles:numeric(radar.completeCycles)??0,totalTargets:numeric(radar.totalTargets)??0,
           ageMs:numeric(radar.ageMs)??null,error:String(radar.error??'')},
         camera:{state:String(camera.state??'not-connected'),message:String(camera.message??'等待实时摄像头')},
-        fusion:{state:String(fusion.state??'unavailable'),message:String(fusion.message??'实时融合尚未就绪')}};
+        fusion:{state:String(fusion.state??'unavailable'),message:String(fusion.message??'等待实时雷达数据')},
+        association:typeof liveAssociation.state==='string' && typeof liveAssociation.message==='string'
+          ? {state:liveAssociation.state,message:liveAssociation.message} : undefined};
     }
     if(['video','detections','radar','fusion'].every(key=>numeric(counts[key])!==undefined))frame.recordingCounts={video:Number(counts.video),detections:Number(counts.detections),radar:Number(counts.radar),fusion:Number(counts.fusion)};
     if(numeric(vision.sequence)!==undefined)frame.cameraFrame={sequence:Number(vision.sequence),width,height,timestamp:timestamp(vision.captured_utc),
       imageUrl:this.url(vision.imageUrl),videoUrl:this.url(context.videoUrl),videoTimeSeconds:numeric(vision.videoTimeSeconds),
+      alignmentDelayMs:alignmentDelayMs || undefined,
       annotated:obj(context.camera).annotated===true ? true : obj(context.camera).annotated===false ? false : undefined};
     if(field && Number.isFinite(reference))field.timestamp=reference;
     return this.trails(frame);
