@@ -8,26 +8,26 @@ Sentinel 是面向道路场景的目标检测和风险感知系统。参赛版�
 | --- | --- |
 | [sentinel/sentinel-backend](sentinel/sentinel-backend) | Fastify 后端、TCR300 解码、风险计算、回放和测试 |
 | [sentinel/web](sentinel/web) | Vue 驾驶舱、雷达视图、风险热图和数据适配 |
+| [内置回放数据](sentinel/web/public/history) | 演示录像及同一次采集的视觉、雷达与风险场数据 |
 | [sentinel/config/devices.example.json](sentinel/config/devices.example.json) | 实时设备配置模板 |
 | [docs/vehicle-integration.md](docs/vehicle-integration.md) | L150 Pro 四驱版移植说明 |
 
-## 构建和测试
+## 安装和构建
 
-在仓库根目录运行以下命令。需要 Node.js 22.12 或更高版本。
+从 GitHub 克隆仓库或下载并解压 `main` 分支后，在含有本 README 的目录打开 PowerShell。需要 Node.js 22.12 或更高版本。
 
 ```powershell
 npm.cmd --prefix sentinel/sentinel-backend ci
 npm.cmd --prefix sentinel/web ci
-npm.cmd --prefix sentinel/sentinel-backend test
-npm.cmd --prefix sentinel/web test
+npm.cmd --prefix sentinel/sentinel-backend run build
 npm.cmd --prefix sentinel/web run build
 ```
 
-后端测试会先构建 TypeScript。依赖原始记录和媒体的测试会在相应数据目录缺失时跳过。还有一项前端实测回放集成测试，需要启动回放服务并设置 `REAL_DATA_INTEGRATION=1`。
+构建完成后，可双击 `sentinel/启动历史回放.cmd`，直接查看内置演示。设备地址和邮件服务按下文在本机配置。账号与回放库的 SQLite 文件会在首次使用时创建。
 
 ## 运行参赛版
 
-运行以下命令后，打开 [SENTINEL 首页](http://127.0.0.1:4173/)。在首页点击「登录」，可注册邮箱账号或重置密码。发信配置见[后端说明](sentinel/sentinel-backend/README.md#邮箱注册与密码重置)。
+服务启动后，可打开 [SENTINEL 首页](http://127.0.0.1:4173/)。在首页点击「登录」，可注册邮箱账号或重置密码。发信配置见[后端说明](sentinel/sentinel-backend/README.md#邮箱注册与密码重置)。
 
 ### 实时设备
 
@@ -48,3 +48,12 @@ node sentinel/launch.mjs live
 在「历史回放」点击「导入回放」，可选择 Sentinel 导出的 ZIP，或同一次采集的录像和配套数据。「回放库」可以保存当前回放、挑选已保存的录制并导出 ZIP，包内含可单独查看的目标数据 CSV。账号与回放库分别保存在本机 SQLite 数据库。
 
 使用原始长录制接口时，在 `sentinel/数据保存/` 和 `sentinel/sentinel-backend/media/` 恢复原参赛包的数据，再单独启动 `SOURCE_MODE=recording` 的后端。摄像头模型权重和本机配置保存在原参赛包或本机。
+
+## 验证
+
+```powershell
+npm.cmd --prefix sentinel/sentinel-backend test
+npm.cmd --prefix sentinel/web test
+```
+
+依赖原始记录和媒体的后端测试会在缺少相应文件时跳过。前端实测回放集成测试需要启动回放服务并设置 `REAL_DATA_INTEGRATION=1`。

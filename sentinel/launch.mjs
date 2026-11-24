@@ -10,7 +10,7 @@ const mode=process.argv[2]??'live',children=[];
 if(!['live','recording','--check'].includes(mode))throw Error('使用 live 或 recording 模式');
 const settings=loadSettings({allowUnconfigured:true});
 for(const file of ['web/dist/index.html','sentinel-backend/dist/src/main.js','sentinel-backend/node_modules/fastify/package.json'])
-  if(!existsSync(join(root,file)))throw Error('迁移包缺少文件：'+file);
+  if(!existsSync(join(root,file)))throw Error(`缺少 ${file}。请先按仓库 README.md 的「安装和构建」准备项目。`);
 const modelReady=existsSync(settings.model);
 if(mode==='--check'){
   console.log(JSON.stringify({root,node:process.version,pythonReady:settings.pythonReady,python:settings.python,
