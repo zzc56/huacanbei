@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useSceneStore } from '../stores/scene';
 import { riskParams } from '../core/risk';
 import RiskTrend from './RiskTrend.vue';
+defineProps<{ bundledReplay?: boolean }>();
 import UiIcon from './UiIcon.vue';
 import { targetCategory, targetDisplayName } from '../core/targetLabels';
 import { measurementStatus } from '../../core/measurementStatus';
@@ -145,7 +146,7 @@ const associationStatus = computed(() => {
         ><small>{{ associationStatus }}</small>
       </div>
     </div>
-    <RiskTrend :target-name="selectedName" />
+    <RiskTrend :target-name="selectedName" :bundled-replay="bundledReplay" />
     <div class="inspector-foot">
       <span :title="measurement.detail"><UiIcon name="link" :size="14" />跨视图同步锁定</span><b>{{ selectedName }}</b>
     </div>

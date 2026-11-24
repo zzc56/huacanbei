@@ -8,16 +8,41 @@ import { useSceneStore } from '../stores/scene';
 import { mockFrame } from '../services/stream';
 import type { RiskTrendPoint } from '../types';
 use([LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
-defineProps<{ targetName: string }>();
+const props = defineProps<{ targetName: string; bundledReplay?: boolean }>();
 const store = useSceneStore(),
   element = ref<HTMLDivElement | null>(null),
   period = ref(600);
 const hasSamples = ref(false);
 const recorded = computed(() => store.replayRiskHistory !== undefined);
 const selectedTrack = computed(() => store.selected?.trackInstanceId ?? store.selectedId);
+const flourishUrl = 'https://public.flourish.studio/visualisation/31017270/embed';
+const flourishAvailable = computed(() => recorded.value && props.bundledReplay &&
+  store.selectedId === 'radar:130');
+const showNative = ref(true);
+const embedded = computed(() => flourishAvailable.value && !showNative.value);
+watch(flourishAvailable, () => { showNative.value = true; });
+const replaySeconds = computed(() => (store.frame.replay?.positionMs ?? 0) / 1000);
+const replayDuration = computed(() => (store.frame.replay?.durationMs ?? 0) / 1000);
+const currentRisk = computed(() => recorded.value ? store.selectedMeasurement?.risk?.value : undefined);
+const replayPoints = computed(() => store.replayRiskHistory?.get(selectedTrack.value) ?? []);
+const revealedCount = computed(() => {
+  const series = replayPoints.value;
+  let start = 0;
+  let end = series.length;
+  while (start < end) {
+    const mid = Math.floor((start + end) / 2);
+    if (series[mid][0] <= replaySeconds.value) start = mid + 1;
+    else end = mid;
+  }
+  return start;
+});
+const revealedPoints = computed(() => replayPoints.value.slice(0, revealedCount.value));
+const hasRevealedSamples = computed(() => revealedPoints.value.some(([, value]) => value !== null));
+const replayColor = '#245cc4';
 let chart: ECharts | undefined,
   observer: ResizeObserver | undefined,
   last = -Infinity;
+let renderedReplayPoints: RiskTrendPoint[] | undefined;
 const history = new Map<string, RiskTrendPoint[]>();
 function record() {
   if(store.frame.timestamp < last){history.clear();last=-Infinity;}
@@ -37,7 +62,6 @@ function record() {
   render();
 }
 function points(): RiskTrendPoint[] {
-  if (store.replayRiskHistory) return store.replayRiskHistory.get(selectedTrack.value) ?? [];
   const end = store.frame.timestamp / 1000,
     start = end - period.value;
   // 仅模拟模式可回算历史；真实流仅展示本次收到的数据。
@@ -48,10 +72,26 @@ function points(): RiskTrendPoint[] {
     });
   return (history.get(selectedTrack.value) || []).filter(([t]) => t >= start);
 }
+function updateReplayCursor() {
+  if (!recorded.value || !chart) return;
+  const x = Math.min(replayDuration.value, Math.max(0, replaySeconds.value));
+  const risk = currentRisk.value;
+  const visible = revealedPoints.value;
+  chart.setOption({
+    series: [
+      ...(visible === renderedReplayPoints ? [] : [{ id: 'target-risk', data: visible }]),
+      { id: 'replay-cursor', data: [[x, 0], [x, 1]] },
+      { id: 'replay-point', data: risk === undefined || !hasRevealedSamples.value ? [] : [[x, risk]] },
+    ],
+  });
+  renderedReplayPoints = visible;
+}
 function render() {
-  const end = recorded.value ? (store.frame.replay?.durationMs ?? 0) / 1000 : store.frame.timestamp / 1000;
-  const data = points();
-  hasSamples.value = data.some(([, value]) => value !== null);
+  const end = recorded.value ? replayDuration.value : store.frame.timestamp / 1000;
+  const data = recorded.value ? revealedPoints.value : points();
+  renderedReplayPoints = recorded.value ? data : undefined;
+  const color = recorded.value ? replayColor : '#009f9b';
+  hasSamples.value = recorded.value ? replayPoints.value.length > 0 : data.some(([, value]) => value !== null);
   chart?.setOption({
     animation: false,
     grid: { top: 22, left: 36, right: 12, bottom: 30 },
@@ -95,15 +135,18 @@ function render() {
     },
     series: [
       {
+        id: 'target-risk',
         type: 'line',
         smooth: false,
         connectNulls: false,
         symbol: 'circle',
-        symbolSize: (_: unknown, { dataIndex }: { dataIndex: number }) =>
-          (data[dataIndex - 1]?.[1] == null && data[dataIndex + 1]?.[1] == null ? 7 : 0),
-        itemStyle: { color: '#009f9b' },
+        symbolSize: (_: unknown, { dataIndex }: { dataIndex: number }) => {
+          const series = recorded.value ? revealedPoints.value : data;
+          return series[dataIndex - 1]?.[1] == null && series[dataIndex + 1]?.[1] == null ? 7 : 0;
+        },
+        itemStyle: { color },
         data,
-        lineStyle: { width: 2.6, color: '#009f9b' },
+        lineStyle: { width: 2.6, color },
         areaStyle: {
           color: {
             type: 'linear',
@@ -112,17 +155,31 @@ function render() {
             x2: 0,
             y2: 1,
             colorStops: [
-              { offset: 0, color: '#00baa777' },
-              { offset: 1, color: '#43cabb00' },
+              { offset: 0, color: recorded.value ? '#245cc42f' : '#00baa777' },
+              { offset: 1, color: '#ffffff00' },
             ],
           },
         },
       },
+      ...(recorded.value ? [
+        {
+          id: 'replay-cursor', type: 'line', data: [], silent: true, symbol: 'none',
+          tooltip: { show: false }, z: 4,
+          lineStyle: { color: '#6784bd', type: 'dashed', width: 1 },
+        },
+        {
+          id: 'replay-point', type: 'line', data: [], silent: true, symbol: 'circle', symbolSize: 8,
+          tooltip: { show: false }, z: 5,
+          itemStyle: { color: replayColor, borderColor: '#fff', borderWidth: 1.5 },
+        },
+      ] : []),
     ],
-  });
+  }, { replaceMerge: ['series'] });
+  updateReplayCursor();
 }
 watch(() => store.frame, record);
-watch(() => [selectedTrack.value, period.value, store.replayRiskHistory], render);
+watch([selectedTrack, period, () => store.replayRiskHistory, replayDuration], render);
+watch([replaySeconds, currentRisk, revealedPoints], updateReplayCursor);
 onMounted(() => {
   chart = init(element.value!);
   observer = new ResizeObserver(() => chart?.resize());
@@ -139,6 +196,8 @@ onUnmounted(() => {
   <section class="risk-trend">
     <div class="section-heading">
       <h3>风险趋势</h3>
+      <button v-if="flourishAvailable" class="trend-source-button" type="button"
+        @click="showNative = !showNative">{{ embedded ? '录像同步版' : 'Flourish 原图' }}</button>
       <div v-if="!recorded" class="periods">
         <button
           v-for="p in [60, 600, 1800]"
@@ -150,14 +209,43 @@ onUnmounted(() => {
         </button>
       </div>
     </div>
-    <div class="trend-chart-wrap">
+    <iframe v-if="embedded" class="flourish-trend" :src="flourishUrl" loading="lazy"
+      title="Flourish 历史风险趋势 · 车辆 130" referrerpolicy="no-referrer" />
+    <div v-show="!embedded" class="trend-chart-wrap">
       <div ref="element" class="trend-chart" aria-label="所选目标风险历史趋势" />
       <p v-if="!hasSamples" class="trend-empty">{{ recorded ? '该目标在本段录像没有有效场值' : '暂无该目标的场值记录' }}</p>
+      <p v-else-if="recorded && !hasRevealedSamples" class="trend-empty">尚未播到该目标的有效风险记录</p>
     </div>
     <div class="trend-foot">
-      <i class="live-dot" />{{ recorded ? '录像时间轴' : store.connection === 'mock' ? '模拟历史' : '本次会话历史'
-      }}<span>目标 {{ targetName }}</span>
+      <i class="live-dot" />
+      <template v-if="recorded && !embedded">
+        <span class="replay-reading">{{ replaySeconds.toFixed(1) }} s · {{ currentRisk?.toFixed(2) ?? '暂无读数' }}</span>
+      </template>
+      <template v-else>{{ embedded ? 'Flourish · 独立回放' : store.connection === 'mock' ? '模拟历史' : '本次会话历史' }}</template>
+      <span>目标 {{ targetName }}</span>
     </div>
   </section>
 </template>
+
+<style scoped>
+.flourish-trend {
+  display: block;
+  width: 100%;
+  height: 300px;
+  flex: 0 0 300px;
+  margin-top: 10px;
+  border: 1px solid #d2e3df;
+  border-radius: 6px;
+  background: white;
+}
+.trend-source-button {
+  padding: 4px 7px;
+  font-size: 12px;
+  color: #136a70;
+  border: 1px solid #b9d9dc;
+  border-radius: 5px;
+}
+.trend-source-button:hover { background: #e1f2f3; }
+.trend-foot .replay-reading { margin: 0; font-variant-numeric: tabular-nums; }
+</style>
 

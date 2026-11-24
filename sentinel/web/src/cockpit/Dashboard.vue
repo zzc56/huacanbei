@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 import { useSceneStore } from './stores/scene';
 import { useScene } from './composables/useScene';
 import StatusBar from './components/StatusBar.vue';
@@ -59,6 +59,34 @@ const tabs = [
   { id: 'camera', name: '摄像头感知', en: 'CAMERA VIEW' },
   { id: 'risk', name: '风险场', en: 'RISK FIELD' },
 ] as const;
+const tabList = ref<HTMLElement>();
+const highlightStyle = shallowRef<{ transform: string; width: string; height: string }>();
+const animateHighlight = ref(false);
+let tabObserver: ResizeObserver | undefined;
+
+function placeHighlight(animate: boolean) {
+  const active = tabList.value?.querySelector<HTMLButtonElement>('button[aria-selected="true"]');
+  if (!active) return;
+  const inset = 3;
+  const next = {
+    transform: `translate3d(${active.offsetLeft + inset}px,${active.offsetTop + inset}px,0)`,
+    width: `${Math.max(0, active.offsetWidth - inset * 2)}px`,
+    height: `${Math.max(0, active.offsetHeight - inset * 2)}px`,
+  };
+  const previous = highlightStyle.value;
+  if (previous?.transform === next.transform && previous.width === next.width && previous.height === next.height) return;
+  animateHighlight.value = animate && !!previous;
+  highlightStyle.value = next;
+}
+watch(mode, () => placeHighlight(true), { flush: 'post' });
+onMounted(() => {
+  if (!tabList.value) return;
+  placeHighlight(false);
+  tabObserver = new ResizeObserver(() => placeHighlight(false));
+  tabObserver.observe(tabList.value);
+  tabList.value.querySelectorAll('button').forEach(button => tabObserver?.observe(button));
+});
+onUnmounted(() => tabObserver?.disconnect());
 const filters = computed(() =>
   mode.value === 'camera'
     ? [
@@ -102,7 +130,9 @@ const targets = computed(() =>
     <div class="cockpit-stage console-stage">
       <StatusBar><LiveControls v-if="source === 'live'" /></StatusBar>
       <div class="monitor-toolbar">
-        <div class="view-tabs" role="tablist" aria-label="感知视图">
+        <div ref="tabList" class="view-tabs" role="tablist" aria-label="感知视图">
+          <span v-if="highlightStyle" class="tab-highlight" :class="{ sliding: animateHighlight }"
+            :style="highlightStyle" aria-hidden="true" />
           <button
             v-for="tab in tabs"
             :key="tab.id"
@@ -152,7 +182,8 @@ const targets = computed(() =>
         </div>
       </div>
       <div class="monitor-layout" :class="mode === 'overview' ? 'overview-layout' : 'detail-layout'">
-        <TargetInspector v-if="mode !== 'overview'" />
+        <TargetInspector v-if="mode !== 'overview'"
+          :bundled-replay="source === 'recording' && bundledReplay && !imported" />
         <section class="monitor-main glass-panel">
           <OverviewPanel v-if="mode === 'overview'" :targets="renderTargets" :time="time" @open="mode = $event" />
           <div v-else class="monitor-content">
@@ -314,3 +345,28 @@ const targets = computed(() =>
     </div>
   </main>
 </template>
+
+<style scoped>
+.view-tabs { position: relative; isolation: isolate; }
+.tab-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 8px;
+  background: #cdebee;
+  box-shadow: inset 0 0 0 1px #00798245;
+  pointer-events: none;
+}
+.tab-highlight.sliding {
+  transition: transform .39s cubic-bezier(.22,.76,.3,1.16),
+    width .39s cubic-bezier(.22,.76,.3,1.16),
+    height .39s cubic-bezier(.22,.76,.3,1.16);
+}
+.monitor-toolbar .view-tabs > button { z-index: 1; }
+.monitor-toolbar .view-tabs > button.active { background: transparent; }
+.monitor-toolbar .view-tabs > button.active::after { display: none; }
+.monitor-toolbar .view-tabs > button:focus-visible { outline: 2px solid #16767e; outline-offset: -4px; }
+@media (prefers-reduced-motion: reduce) {
+  .tab-highlight.sliding { transition: none; }
+}
+</style>
