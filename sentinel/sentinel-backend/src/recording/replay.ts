@@ -140,10 +140,10 @@ export function registerRecording(app: FastifyInstance, origins: Set<string>) {
   });
   wss.on('connection', (socket: WebSocket) => {
     clients.add(socket);
-    let position = 0, anchor = performance.now(), playing = true, disposed = false;
+    let position = 0, anchor = performance.now(), rate = 1, playing = false, disposed = false;
     const send = (message: unknown) => { if (socket.readyState === WebSocket.OPEN && socket.bufferedAmount < 256 * 1024) socket.send(JSON.stringify(message)); };
     const total = () => recording.end - recording.start;
-    const current = () => Math.min(total(), position + (playing ? performance.now() - anchor : 0));
+    const current = () => Math.min(total(), position + (playing ? (performance.now() - anchor) * rate : 0));
     // 放到结尾就回到开头接着放，演示时不会停在一帧空画面上等人来点。
     const frame = () => {
       let time = current();
@@ -155,11 +155,12 @@ export function registerRecording(app: FastifyInstance, origins: Set<string>) {
     socket.on('message', (raw, binary) => {
       if (binary) return;
       try {
-        const m = JSON.parse(raw.toString()) as { action?: string; positionMs?: number; targetId?: string };
+        const m = JSON.parse(raw.toString()) as { action?: string; positionMs?: number; targetId?: string; rate?: number };
         position = current(); anchor = performance.now();
         if (m.action === 'pause') playing = false;
         else if (m.action === 'play') { if (position >= recording.end - recording.start) position = 0; playing = true; }
         else if (m.action === 'seek' && Number.isFinite(m.positionMs)) position = Math.max(0, Math.min(recording.end - recording.start, m.positionMs!));
+        else if (m.action === 'set_rate' && typeof m.rate === 'number' && Number.isFinite(m.rate) && m.rate >= 0.5 && m.rate <= 2) rate = m.rate;
         else if (m.action === 'select_target') { send({ type: 'selection', targetId: m.targetId ?? null }); return; }
         else { send({ type: 'error', error: 'Invalid replay command' }); return; }
         frame(); send({ type: 'system_state', state: playing ? 'playing' : 'paused' });

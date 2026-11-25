@@ -1,13 +1,14 @@
 import http from 'node:http';
+import https from 'node:https';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { resolve, dirname, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pipeline } from 'node:stream/promises';
+import { accountCookie, authOrigin } from './auth-origin.mjs';
 
 // 交付版静态预览，只监听本机；无需 npm install。开发仍使用 Vite。
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../dist');
-const authOrigin = process.env.SENTINEL_AUTH_ORIGIN ?? 'http://127.0.0.1:3001';
 const liveOrigin = process.env.SENTINEL_LIVE_ORIGIN ?? 'http://127.0.0.1:3001';
 const workspace = process.env.SENTINEL_WORKSPACE;
 const authPosts = new Set([
@@ -33,7 +34,14 @@ function proxyApi(request, response, pathname, origin) {
   for (const name of ['content-type', 'content-length', 'origin', 'cookie']) {
     if (request.headers[name]) headers[name] = request.headers[name];
   }
-  const upstream = http.request(new URL(pathname, origin), {
+  if (pathname.startsWith('/api/auth/')) {
+    const cookie = accountCookie(request.headers.cookie);
+    if (cookie) headers.cookie = cookie;
+    else delete headers.cookie;
+  }
+  const target = new URL(pathname, origin);
+  const transport = target.protocol === 'https:' ? https : http;
+  const upstream = transport.request(target, {
     method: request.method,
     headers,
     timeout: 35_000,

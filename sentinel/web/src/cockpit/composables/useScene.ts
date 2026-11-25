@@ -26,6 +26,9 @@ export function useScene(configuration: () => {
   let stopStream: (() => void) | undefined;
   const stopSelection = watch(() => store.selectedId, id => active?.select?.(id));
   const stopSeek = watch(() => store.seekRequest, request => { if(request) active?.seek?.(request.positionMs); });
+  const stopRate = watch(() => store.replayPlaybackRate, rate => {
+    if (store.frame.source === 'recording') active?.setPlaybackRate?.(rate);
+  });
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const stopWatch = watch(
     () => store.playing,
@@ -75,7 +78,9 @@ export function useScene(configuration: () => {
     store.replayRiskHistory = undefined;
     store.frame = { timestamp: 0, targets: [], source };
     store.connection = 'connecting';
-    store.playing = true;
+    store.playing = source === 'live';
+    stream.setPaused(!store.playing);
+    if (source === 'recording') stream.setPlaybackRate?.(store.replayPlaybackRate);
     store.select('—');
     store.seekRequest = null;
     store.cameraLatencyMs = null;
@@ -129,7 +134,7 @@ export function useScene(configuration: () => {
     if (store.replayVideo === stream?.replayVideo) store.replayVideo = null;
     if (store.replayRiskHistory === stream?.replayRiskHistory) store.replayRiskHistory = undefined;
     stopWatch();
-    stopSelection(); stopSeek();
+    stopSelection(); stopSeek(); stopRate();
   });
   return { renderTargets, time };
 }

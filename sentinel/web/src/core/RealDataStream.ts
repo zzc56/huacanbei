@@ -10,6 +10,7 @@ export class WebSocketStream implements DataStream {
   private recording=false;
   private live=false;
   private position=0;
+  private rate=1;
   private configAbort?: AbortController;
   private base: string;
   private adapter: RealDataAdapter;
@@ -19,7 +20,7 @@ export class WebSocketStream implements DataStream {
   private onFrame:((frame:Frame)=>void)|undefined;
   private onStatus:((state:ConnectionState)=>void)|undefined;
   private onPlayback:((playing:boolean)=>void)|undefined;
-  constructor(private url:string) {
+  constructor(private url:string, private readonly replayRequested = false) {
     const u=new URL(url,window.location.href); u.protocol=u.protocol==='wss:'?'https:':'http:';
     this.base=u.origin;this.adapter=new RealDataAdapter(this.base);
   }
@@ -46,14 +47,20 @@ export class WebSocketStream implements DataStream {
     try {
       const socket=this.socket=new WebSocket(this.url);
       socket.onopen=()=>{this.attempts=0;this.recording=false;this.live=false;this.lastFrameAt=Date.now();
-        this.streaming=!this.paused;this.onStatus?.('connected');if(this.paused)this.send({action:'pause'});};
+        this.streaming=!this.paused;this.onStatus?.('connected');
+        if(this.paused && !this.replayRequested)this.send({action:'pause'});};
       socket.onmessage=event=>{
         try {
           const raw=JSON.parse(event.data);
           if(raw?.type==='replay_manifest'){this.recording=true;this.lastFrameAt=Date.now();this.onStatus?.('replay');
-            if(this.position)this.send({action:'seek',positionMs:this.position});return;}
+            if(this.position)this.send({action:'seek',positionMs:this.position});
+            if(this.rate!==1)this.send({action:'set_rate',rate:this.rate});
+            this.send({action:this.paused?'pause':'play'});
+            return;}
           if(raw?.type==='live_manifest'){this.live=true;this.recording=false;this.lastFrameAt=Date.now();this.onStatus?.('connected');return;}
           if(raw?.type==='system_state'){
+            // Recording commands can acknowledge an earlier seek or rate change before play.
+            if (this.recording && raw.ended !== true) return;
             if(raw.state==='paused'||raw.state==='playing'){
               this.paused=raw.state==='paused';
               // 回放放到结尾之后服务端不再推帧，这是正常停止，不能当成断线去重连。
@@ -92,7 +99,11 @@ export class WebSocketStream implements DataStream {
   setPaused(paused:boolean){
     if(this.paused===paused)return;this.paused=paused;this.streaming=!paused;this.lastFrameAt=Date.now();
     if(this.recording||this.live)this.send({action:paused?'pause':'play'});
-    else if(this.socket?.readyState===WebSocket.OPEN)void fetch(this.base+'/api/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:paused?'pause':'play'})}).catch(()=>{});
+    else if(!this.replayRequested&&this.socket?.readyState===WebSocket.OPEN)void fetch(this.base+'/api/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:paused?'pause':'play'})}).catch(()=>{});
+  }
+  setPlaybackRate(rate: number) {
+    this.rate = rate;
+    if (this.recording) this.send({action:'set_rate',rate});
   }
   select(id:string){this.send({action:'select_target',targetId:id==='—'?null:id});}
   seek(positionMs:number){this.position=Math.max(0,positionMs);this.send({action:'seek',positionMs:this.position});}
@@ -104,8 +115,21 @@ export class ApiStream implements DataStream {
   private timer?:ReturnType<typeof setInterval>;private abort?:AbortController;private paused=false;private disposed=false;private pending=false;private position=0;private last=performance.now();
   private seekRevision=0;
   private needsFrame=true;
+  private rate=1;
   constructor(private url:string){}
-  setPaused(value:boolean){this.paused=value;this.last=performance.now();}
+  private advance(now: number) {
+    if (!this.paused) this.position += (now - this.last) * this.rate;
+    this.last = now;
+  }
+  setPaused(value:boolean){
+    if (value === this.paused) return;
+    this.advance(performance.now());
+    this.paused=value;
+  }
+  setPlaybackRate(rate: number) {
+    this.advance(performance.now());
+    this.rate = rate;
+  }
   seek(value:number){
     if(!Number.isFinite(value))return;
     this.position=Math.max(0,value);
@@ -117,7 +141,7 @@ export class ApiStream implements DataStream {
   start(onFrame:(frame:Frame)=>void,status:(state:ConnectionState)=>void){
     const adapter=new RealDataAdapter(this.url);
     const poll=async()=>{
-      const now=performance.now();if(!this.paused)this.position+=now-this.last;this.last=now;
+      this.advance(performance.now());
       if(this.pending||this.paused&&!this.needsFrame)return;
       this.pending=true;
       const request=this.abort=new AbortController();

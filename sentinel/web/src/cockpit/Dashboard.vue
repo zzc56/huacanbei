@@ -14,6 +14,7 @@ import { targetDisplayName } from './core/targetLabels';
 import type { ViewMode } from './renderers/lightScene';
 import type { MonitorSource } from './services/stream';
 import type { ReplayRecording } from './data/bundledReplay';
+import { replayPlaybackRates } from './types';
 import './styles.css';
 import './field-console.css';
 const props = defineProps<{ source: MonitorSource; bundledReplay?: boolean }>();
@@ -153,7 +154,7 @@ const targets = computed(() =>
             <ReplayImport @imported="applyReplay" />
             <button v-if="imported || !bundledReplay" class="replay-demo-button" type="button" @click="showDemo">演示数据</button>
           </div>
-          <ReplayLibrary :source="source" :current="imported" :bundled="bundledReplay" :name="replayName" @play="applyReplay" />
+          <ReplayLibrary :source="source" :current="imported" :bundled="bundledReplay" :name="replayName" @open-replay="applyReplay" />
           <div v-if="source === 'recording' && store.frame.replay" class="replay-timeline">
             <input
               type="range"
@@ -168,6 +169,9 @@ const targets = computed(() =>
               @blur="replayDragPosition = undefined"
             />
             <span>{{ (replayPosition / 1000).toFixed(1) }} / {{ (store.frame.replay.durationMs / 1000).toFixed(1) }} s</span>
+            <select v-model="store.replayPlaybackRate" aria-label="回放倍速">
+              <option v-for="rate in replayPlaybackRates" :key="rate" :value="rate">{{ rate }}×</option>
+            </select>
             <button type="button" aria-label="从头回放" @click="store.seek(0)">↺</button>
           </div>
           <div class="source-modes" role="group" aria-label="数据模式">

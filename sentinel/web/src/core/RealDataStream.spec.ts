@@ -1,8 +1,8 @@
 import { expect, it, vi } from 'vitest';
 import { ApiStream } from './RealDataStream';
 
-it('fetches the requested frame when the HTTP replay is paused', async () => {
-  vi.useFakeTimers();
+it('seeks while paused and applies the new HTTP replay rate without jumping', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] });
   vi.stubGlobal('window', { location: { href: 'http://127.0.0.1:4173/' } });
   const positions: string[] = [];
   vi.stubGlobal('fetch', async (url: URL) => {
@@ -23,6 +23,13 @@ it('fetches the requested frame when the HTTP replay is paused', async () => {
     expect(positions).toEqual(['0', '6500']);
     expect(onFrame).toHaveBeenCalledTimes(2);
     expect(onFrame.mock.lastCall?.[0].replay.positionMs).toBe(6500);
+    stream.setPlaybackRate(2);
+    stream.setPaused(false);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(positions.slice(-2)).toEqual(['6700', '6900']);
+    stream.setPlaybackRate(0.5);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(positions.slice(-2)).toEqual(['6950', '7000']);
   } finally {
     stream.dispose();
     vi.unstubAllGlobals();

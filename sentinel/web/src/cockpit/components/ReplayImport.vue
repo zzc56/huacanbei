@@ -174,7 +174,7 @@ onBeforeUnmount(cancelImport);
         </label>
         <p v-if="error" class="import-error" role="alert">{{ error }}</p>
         <p v-else-if="loading" role="status">正在解析并对齐数据…</p>
-        <button class="import-submit" type="submit" :disabled="!complete || loading">解析并回放</button>
+        <button class="import-submit" type="submit" :disabled="!complete || loading">解析并打开</button>
       </form>
     </dialog>
   </Teleport>

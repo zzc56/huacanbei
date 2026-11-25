@@ -398,7 +398,7 @@ export class BundledReplayStream implements DataStream {
   private lastPacket?: Packet;
   private lastDisplayStep = -1;
   private ready = false;
-  private paused = false;
+  private paused = true;
   private onFrame?: Parameters<DataStream['start']>[0];
   private onStatus?: Parameters<DataStream['start']>[1];
   private onPlayback?: Parameters<DataStream['start']>[2];
@@ -497,6 +497,7 @@ export class BundledReplayStream implements DataStream {
   };
 
   setPaused(paused: boolean) {
+    if (paused === this.paused) return;
     this.paused = paused;
     if (!this.ready) return;
     if (paused) {
@@ -506,6 +507,10 @@ export class BundledReplayStream implements DataStream {
       if (this.replayVideo.ended) this.seek(0);
       this.play();
     }
+  }
+
+  setPlaybackRate(rate: number) {
+    this.replayVideo.playbackRate = rate;
   }
 
   seek(positionMs: number) {

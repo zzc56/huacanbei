@@ -95,5 +95,5 @@ export function createStream(source: MonitorSource = 'live', bundledReplay = fal
   const port = source === 'recording' ? 3002 : 3001;
   if (env.VITE_STREAM_MODE === 'api')
     return new ApiStream(env.VITE_STREAM_URL || `http://127.0.0.1:${port}/api/${source === 'recording' ? 'replay' : 'live'}/frame`);
-  return new WebSocketStream(env.VITE_STREAM_URL || `ws://127.0.0.1:${port}/stream`);
+  return new WebSocketStream(env.VITE_STREAM_URL || `ws://127.0.0.1:${port}/stream`, source === 'recording');
 }

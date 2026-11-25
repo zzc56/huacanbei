@@ -32,6 +32,11 @@ const status = computed(
       error: '数据接口异常',
     }[store.connection]),
 );
+const displayedStatus = computed(() => {
+  if (store.playing) return status.value;
+  if (store.frame.source === 'live') return '显示已冻结 · 采集继续';
+  return store.connection === 'replay' ? '回放已暂停' : status.value;
+});
 function syncFull() {
   full.value = !!document.fullscreenElement;
 }
@@ -100,7 +105,7 @@ onUnmounted(() => {
     </div>
     <div class="system-health">
       <span :class="{ offline: ['error', 'disconnected'].includes(store.connection) || store.frame.live && store.frame.live.radar.state!=='streaming' && store.frame.live.camera.state!=='streaming' }"
-        ><i class="live-dot" />{{ store.playing ? status : store.frame.source==='live' ? '显示已冻结 · 采集继续' : '回放已暂停' }}</span
+        ><i class="live-dot" />{{ displayedStatus }}</span
       ><svg viewBox="0 0 140 20">
         <path
           d="M0 12h25l5-7 7 12 9-15 6 10h14l5-4 5 4h64"
@@ -141,8 +146,8 @@ onUnmounted(() => {
       <button
         class="icon-button"
         @click="store.playing = !store.playing"
-        :aria-label="store.frame.source==='live' ? (store.playing ? '冻结实时显示' : '继续实时显示') : (store.playing ? '暂停回放' : '继续回放')"
-        :title="store.playing ? '暂停 · Space' : '继续 · Space'"
+        :aria-label="store.frame.source==='live' ? (store.playing ? '冻结实时显示' : '继续实时显示') : (store.playing ? '暂停回放' : '播放回放')"
+        :title="store.playing ? '暂停 · Space' : (store.frame.source === 'recording' ? '播放 · Space' : '继续 · Space')"
       >
         <svg v-if="store.playing" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" /></svg
         ><svg v-else viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z" /></svg></button

@@ -164,6 +164,16 @@
   font-size: 15px;
 }
 .replay-timeline button:hover { background: #dcf0f3; }
+.replay-timeline select {
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid var(--overview-border);
+  border-radius: 5px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
 .console-stage .overview-panel { padding-top: 2px; }
 .console-stage :is(.overview-card,.radar-minimap) {
   background: #ffffff;

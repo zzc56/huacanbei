@@ -6,7 +6,7 @@ import { useReplayRecorder } from '../composables/useReplayRecorder';
 import { useSceneStore } from '../stores/scene';
 
 const props = defineProps<{ source: 'live' | 'recording'; current?: ReplayRecording; bundled?: boolean; name: string }>();
-const emit = defineEmits<{ play: [recording: ReplayRecording] }>();
+const emit = defineEmits<{ openReplay: [recording: ReplayRecording] }>();
 const store = useSceneStore();
 const dialog = ref<HTMLDialogElement>();
 const busy = ref(false);
@@ -67,9 +67,9 @@ async function useCurrent(exporting: boolean) {
     }
   });
 }
-async function play(entry: ReplayEntry) {
+async function openReplay(entry: ReplayEntry) {
   await perform(async () => {
-    emit('play', await openSavedReplay(entry.id));
+    emit('openReplay', await openSavedReplay(entry.id));
     dialog.value?.close();
   });
 }
@@ -121,7 +121,7 @@ watch(() => props.source, () => { if (recording.value) void recorder.stop(); });
         <li v-for="entry in entries" :key="entry.id">
           <div><strong>{{ entry.name }}</strong><small>{{ dateLabel(entry.createdAt) }} · {{ formatDuration(entry.durationMs) }}</small></div>
           <div class="library-actions">
-            <button type="button" :disabled="busy" @click="play(entry)">播放</button>
+            <button type="button" :disabled="busy" @click="openReplay(entry)">打开</button>
             <a :href="savedReplayUrl(entry.id)" download>导出</a>
           </div>
         </li>

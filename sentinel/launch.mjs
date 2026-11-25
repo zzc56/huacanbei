@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import net from 'node:net';
 import {setTimeout as delay} from 'node:timers/promises';
 import {root,loadSettings} from './settings.mjs';
+import {authOrigin} from './web/scripts/auth-origin.mjs';
 
 const mode=process.argv[2]??'live',children=[];
 if(!['live','recording','--check'].includes(mode))throw Error('使用 live 或 recording 模式');
@@ -18,9 +19,10 @@ if(mode==='--check'){
     camera:settings.config.camera.enabled?new URL(settings.config.camera.rtspUrl).hostname:'未启用',
     sourceFilesReady:true},null,2));
 }else{
-  const workspace=createHash('sha256').update(root.toLowerCase()).digest('hex');
   const frontend='http://127.0.0.1:4173';
   const backend='http://127.0.0.1:3001';
+  const workspace=createHash('sha256').update(root.toLowerCase())
+    .update(authOrigin===backend?'':'\0'+authOrigin).digest('hex');
   const page=frontend+(mode==='recording'?'/#/history':'/');
   let stopping=false;
   async function available(port){
@@ -86,7 +88,7 @@ if(mode==='--check'){
       launch('sentinel-backend','dist/src/main.js','live-backend',settings.environment);
       await wait(backend+'/api/health',data=>data.source==='live');
       launch('web','scripts/serve-dist.mjs','live-frontend',{
-        SENTINEL_AUTH_ORIGIN:backend,SENTINEL_LIVE_ORIGIN:backend,SENTINEL_WORKSPACE:workspace,
+        SENTINEL_AUTH_ORIGIN:authOrigin,SENTINEL_LIVE_ORIGIN:backend,SENTINEL_WORKSPACE:workspace,
       });
       await wait(frontend+'/real-data-version.json',()=>true);
       console.log(`已启动 Sentinel：${page}\n保留此窗口，Ctrl+C 停止。`);

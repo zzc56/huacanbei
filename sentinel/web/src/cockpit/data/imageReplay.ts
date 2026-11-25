@@ -6,6 +6,7 @@ export class ImageReplayStream implements DataStream {
   private readonly urls = new Map<number, string>();
   private anchor = 0;
   private position = 0;
+  private rate = 1;
   private paused = true;
   private raf = 0;
   private onFrame?: Parameters<DataStream['start']>[0];
@@ -22,7 +23,6 @@ export class ImageReplayStream implements DataStream {
     this.onPlayback = onPlayback;
     onStatus('replay');
     this.publish(true);
-    this.setPaused(false);
   }
 
   private publish(force = false) {
@@ -52,8 +52,13 @@ export class ImageReplayStream implements DataStream {
     });
   }
 
+  private advance(now: number) {
+    this.position = Math.min(this.replay.durationMs, this.position + Math.max(0, now - this.anchor) * this.rate);
+    this.anchor = now;
+  }
+
   private tick = (now: number) => {
-    this.position = Math.min(this.replay.durationMs, now - this.anchor);
+    this.advance(now);
     this.publish(this.position >= this.replay.durationMs);
     if (this.position >= this.replay.durationMs) {
       this.paused = true;
@@ -65,18 +70,25 @@ export class ImageReplayStream implements DataStream {
     if (paused === this.paused) return;
     this.paused = paused;
     if (paused) {
+      this.advance(performance.now());
       cancelAnimationFrame(this.raf);
+      this.publish(true);
       return;
     }
     if (this.position >= this.replay.durationMs) this.seek(0);
-    this.anchor = performance.now() - this.position;
+    this.anchor = performance.now();
     this.raf = requestAnimationFrame(this.tick);
+  }
+
+  setPlaybackRate(rate: number) {
+    if (!this.paused) this.advance(performance.now());
+    this.rate = rate;
   }
 
   seek(positionMs: number) {
     if (!Number.isFinite(positionMs)) return;
     this.position = Math.max(0, Math.min(positionMs, this.replay.durationMs));
-    this.anchor = performance.now() - this.position;
+    this.anchor = performance.now();
     this.publish(true);
   }
 

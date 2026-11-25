@@ -30,6 +30,12 @@ npm start
 
 账号保存在 `sentinel-backend/auth-data/accounts.sqlite`。首次访问账号接口时，会把同目录下的旧账号 JSON 一次性迁入 SQLite，保留原密码哈希和 JSON 备份。已有账号可以继续使用原密码。设置 `AUTH_DATA_DIR` 可指定账号目录。验证码和登录会话保存在后端内存中。
 
+### 共用发信邮箱
+
+在公共服务器的后端 `.env` 中填好统一发信邮箱的 SMTP 配置，并设置 `SOURCE_MODE=auth`。将 `AUTH_DATA_DIR` 指向持久化目录，启动后通过 HTTPS 反向代理提供 `/api/auth/`。发布下载版前，把服务的 HTTPS 地址写到 `sentinel/web/auth-service.json` 的 `origin`，例如 `https://accounts.example.com`。下载版在启动时读取这个地址。
+
+登录、注册和密码重置共用公共账号库。雷达、视频和回放库继续由本机服务处理。SMTP 授权码只需要配置在公共服务器上。开发调试可以用环境变量 `SENTINEL_AUTH_ORIGIN` 临时覆盖公共地址。
+
 ## 回放库
 
 回放库将录像或采样画面、时间线和目标数据打包为 ZIP，保存在 `sentinel-backend/replay-data/replays.sqlite`。重启后可继续查看和导出已保存的回放。可用 `REPLAY_DATA_DIR` 指定存储目录。

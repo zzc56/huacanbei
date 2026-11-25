@@ -10,6 +10,7 @@ export const useSceneStore = defineStore('cockpit', () => {
   const replayVideo = shallowRef<HTMLVideoElement | null>(null);
   const replayRiskHistory = shallowRef<ReadonlyMap<string, RiskTrendPoint[]>>();
   const playing = ref(true);
+  const replayPlaybackRate = ref(1);
   const connection = ref<ConnectionState>('connecting');
   const liveCameraReady = computed(() =>
     connection.value === 'connected' && frame.value.source === 'live' &&
@@ -48,6 +49,7 @@ export const useSceneStore = defineStore('cockpit', () => {
     frame,
     selectedId,
     playing,
+    replayPlaybackRate,
     connection,
     liveCameraReady,
     fps,

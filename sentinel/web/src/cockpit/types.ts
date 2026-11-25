@@ -79,11 +79,13 @@ export interface ScalarField {
 }
 export type ConnectionState = 'mock' | 'replay' | 'connecting' | 'connected' | 'disconnected' | 'error';
 export type RiskTrendPoint = [seconds: number, value: number | null];
+export const replayPlaybackRates = [0.5, 1, 1.5, 2] as const;
 export interface DataStream {
   readonly replayVideo?: HTMLVideoElement;
   readonly replayRiskHistory?: ReadonlyMap<string, RiskTrendPoint[]>;
   start(onFrame: (frame: Frame) => void, onStatus: (state: ConnectionState) => void, onPlayback?: (playing: boolean) => void): void;
   setPaused(paused: boolean): void;
+  setPlaybackRate?(rate: number): void;
   dispose(): void;
   select?(id: string): void;
   seek?(positionMs: number): void;
