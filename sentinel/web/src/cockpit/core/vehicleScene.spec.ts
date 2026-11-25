@@ -19,6 +19,21 @@ function observation(): VehicleResult {
   };
 }
 describe('vehicle cockpit',()=>{
+  it('numbers balls independently and keeps their numbers across frames', () => {
+    const data = observation();
+    const image = data.capture!.vision!;
+    const person = image.detections[0];
+    const ball = { ...person, track_id: 'V15', label: 'sports ball' };
+    const secondBall = { ...ball, track_id: 'V23', x: 180 };
+    const ballNumbers = new Map<string, number>();
+    image.detections = [person, ball, secondBall];
+    let scene = vehicleScene(data, origin, undefined, ballNumbers);
+    expect(scene.targets.map(target => target.id)).toEqual(['C-V01', 'BALL-1', 'BALL-2']);
+    image.detections = [secondBall, ball, person];
+    scene = vehicleScene(data, origin, undefined, ballNumbers);
+    expect(scene.targets.map(target => target.id)).toEqual(['C-V01', 'BALL-2', 'BALL-1']);
+    expect(scene.targets.find(target => target.id === 'BALL-1')?.camera?.trackId).toBe('V15');
+  });
   it('retains the exact camera frame during a vehicle update with missing data',()=>{
     const previous=observation().capture;
     const waiting=vehicleScene(null,origin,previous);

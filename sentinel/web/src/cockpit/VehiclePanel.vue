@@ -98,6 +98,7 @@ const riskTitle = computed(() => radarOnly.value ? '车载雷达风险场' : '�
 const targetsTitle = computed(() => radarOnly.value ? '雷达目标' : '融合目标');
 const lastRiskFrame = shallowRef<VehicleResult | null>(null);
 const lastCameraCapture = shallowRef<VehicleResult['capture']>();
+const ballNumbers = new Map<string, number>();
 const displayedRisk = computed(() => frame.value?.field ? frame.value : lastRiskFrame.value);
 const riskHeld = computed(() => !!displayedRisk.value && !frame.value?.field);
 const cameraHeld = computed(() => !radarOnly.value && !frame.value?.capture?.vision && !!lastCameraCapture.value?.vision);
@@ -132,7 +133,9 @@ const frozen = ref(false), refreshHz = ref(0), requestMs = ref<number | null>(nu
 let receipts: number[] = [];
 watch([frame, error], () => {
   const adapter = radarOnly.value ? radarAdapter : fusionAdapter;
-  store.frame = adapter.trails(vehicleScene(frame.value, endpoint.origin, radarOnly.value ? undefined : lastCameraCapture.value));
+  store.frame = adapter.trails(vehicleScene(
+    frame.value, endpoint.origin, radarOnly.value ? undefined : lastCameraCapture.value, ballNumbers,
+  ));
   store.connection = frame.value ? 'connected' : error.value ? 'error' : 'connecting';
   if (!store.frame.targets.some(t => t.id === store.selectedId)) store.select(store.frame.targets[0]?.id ?? '—');
 }, {immediate:true, flush:'sync'});

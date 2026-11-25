@@ -3,7 +3,12 @@ import { normalizeBox, position, sampleField } from '../../core/RealDataAdapter'
 import type { Frame, ScalarField, Target } from '../types';
 
 /** Adapt one vehicle evaluation for the existing cockpit inspectors and scenes. */
-export function vehicleScene(result: VehicleResult | null, origin: string, retainedCapture?: VehicleResult['capture']): Frame {
+export function vehicleScene(
+  result: VehicleResult | null,
+  origin: string,
+  retainedCapture?: VehicleResult['capture'],
+  ballNumbers = new Map<string, number>(),
+): Frame {
   const timestamp = result?.evaluatedAtMs ?? 0, grid = result?.field;
   const capture = result?.capture?.vision ? result.capture : retainedCapture ?? result?.capture, image = capture?.vision;
   const field: ScalarField | undefined = grid ? {
@@ -51,6 +56,11 @@ export function vehicleScene(result: VehicleResult | null, origin: string, retai
       const bbox=normalizeBox([d.x,d.y,d.width,d.height],image.width,image.height);
       if(!bbox)return;
       const t=groundTracks.get(d.track_id) ?? {id:'V-'+d.track_id,observationTimestamp:capturedAt};
+      if (d.label === 'sports ball') {
+        const number = ballNumbers.get(d.track_id) ?? ballNumbers.size + 1;
+        ballNumbers.set(d.track_id, number);
+        t.id = `BALL-${number}`;
+      }
       t.camera={bbox,class:d.label,confidence:d.score,sequence:image.sequence,detectionIndex:i,trackId:d.track_id};
       t.kind=d.label;
       if(!groundTracks.has(d.track_id))targets.push(t);

@@ -225,13 +225,15 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                       ><UiIcon
                         :name="
                           mode === 'camera'
-                            ? target.camera?.class === 'truck'
-                              ? 'truck'
-                              : target.camera?.class === 'person'
-                                ? 'person'
-                                : target.camera
-                                  ? 'car'
-                                  : 'radar'
+                            ? target.camera?.class === 'sports ball'
+                              ? 'ball'
+                              : target.camera?.class === 'truck'
+                                ? 'truck'
+                                : target.camera?.class === 'person'
+                                  ? 'person'
+                                  : target.camera
+                                    ? 'car'
+                                    : 'radar'
                             : 'focus'
                         "
                         :size="24" /></span

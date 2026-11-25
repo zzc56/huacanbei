@@ -6,6 +6,7 @@ const paths: Record<string, string> = {
   risk: 'M12 3 2 21h20L12 3zM12 9v5m0 3v1',
   car: 'M4 10 6 5h12l2 5M3 10h18v8H3zM5 18v3m14-3v3M6 13h2m8 0h2',
   truck: 'M2 5h12v12H2zM14 9h5l3 4v4h-8M5 17v3m13-3v3',
+  ball: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM3 12h18M12 3v18M5.7 5.6c4 3.5 4 9.3 0 12.8m12.6-12.8c-4 3.5-4 9.3 0 12.8',
   person: 'M12 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4M12 8v7l-4 6m4-6 4 6M6 12l6-4 6 4',
   focus: 'M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10',
   filter: 'M3 4h18l-7 8v8l-4-2v-6L3 4z',
