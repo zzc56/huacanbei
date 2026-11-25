@@ -1,9 +1,17 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 
 const props = defineProps<{ endpoint: URL }>();
+const presets = [
+  { id:'traffic', title:'A · 人车', labels:['person','bicycle','car','motorcycle','bus','truck'] },
+  { id:'ball', title:'B · 球类', labels:['sports ball'] },
+  { id:'sports', title:'C · 人和球', labels:['person','sports ball'] },
+] as const;
+type Preset = typeof presets[number]['id'];
+const emit = defineEmits<{ presetChange: [preset: Preset | null] }>();
 const available = ref<string[]>([]), selected = ref<string[]>([]);
 const query = ref(''), message = ref(''), busy = ref(false);
+const activePreset = ref<Preset | null>(null);
 const names: Record<string,string> = {
   person:'人', bicycle:'自行车', car:'汽车', motorcycle:'摩托车', bus:'公交车', truck:'卡车',
   'sports ball':'球', bottle:'瓶子', cup:'杯子', book:'书', 'teddy bear':'玩偶',
@@ -14,34 +22,53 @@ const filtered = computed(() => {
   return available.value.filter(label => label.toLowerCase().includes(term) || names[label]?.includes(term));
 });
 
-async function update(save = false) {
+async function update(selection?: { selected: string[] } | { preset: Preset }) {
   if (busy.value) return;
   busy.value = true;
   message.value = '';
   try {
     const response = await fetch(new URL('/api/vehicle/camera-classes', props.endpoint), {
       cache:'no-store', signal:AbortSignal.timeout(3000),
-      ...(save ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selected:selected.value})} : {}),
+      ...(selection ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(selection)} : {}),
     });
     const data = await response.json();
     if (!response.ok) throw Error(response.status === 404 ? '请启动新版车路协同后端。' : data.error ?? '读取类别失败。');
     available.value = data.available;
     selected.value = data.selected;
-    message.value = save ? '已应用到实时检测' : available.value.length ? '' : '等待检测模型加载，再刷新类别。';
+    activePreset.value = data.preset ?? null;
+    emit('presetChange', activePreset.value);
+    message.value = selection ? '模式已应用' : available.value.length ? '' : '等待检测模型加载。';
   } catch (cause) {
     message.value = cause instanceof Error ? cause.message : '读取类别失败。';
   } finally {
     busy.value = false;
   }
 }
+function choosePreset(preset: typeof presets[number]) {
+  const supported = preset.id === 'sports'
+    ? preset.labels.every(label=>available.value.includes(label))
+    : preset.labels.some(label=>available.value.includes(label));
+  if (available.value.length && !supported) {
+    message.value = '当前检测模型不支持该模式。';
+    return;
+  }
+  void update({preset:preset.id});
+}
 function opened(event: Event) {
   if ((event.currentTarget as HTMLDetailsElement).open) void update();
 }
+onMounted(() => void update());
 </script>
 
 <template>
-  <details class="detection-picker" @toggle="opened">
-    <summary>识别类别</summary>
+  <div class="detection-picker">
+    <div class="mode-row" role="group" aria-label="识别模式">
+      <span>识别模式</span>
+      <button v-for="preset in presets" :key="preset.id" type="button" :disabled="busy"
+        :aria-pressed="activePreset === preset.id" @click="choosePreset(preset)">{{ preset.title }}</button>
+    </div>
+  <details @toggle="opened">
+    <summary>自定义类别</summary>
     <input v-model="query" type="search" aria-label="搜索识别类别" placeholder="搜球、瓶子或模型类别" />
     <fieldset v-if="available.length" :disabled="busy">
       <legend>模型支持的类别</legend>
@@ -55,10 +82,11 @@ function opened(event: Event) {
     </fieldset>
     <div class="actions">
       <button type="button" :disabled="busy" @click="update()">刷新类别</button>
-      <button v-if="available.length" type="button" :disabled="busy" @click="update(true)">应用选择</button>
+      <button v-if="available.length" type="button" :disabled="busy" @click="update({selected})">应用选择</button>
     </div>
-    <p v-if="message" role="status">{{ message }}</p>
   </details>
+    <p v-if="message" role="status">{{ message }}</p>
+  </div>
 </template>
 
 <style scoped>
@@ -70,5 +98,8 @@ fieldset { padding:0; border:0; }
 label { display:flex; align-items:center; gap:3px; }
 .actions { display:flex; gap:8px; margin:5px 0; }
 .detection-picker button { padding:3px 6px; border:1px solid #a8cdd6; border-radius:4px; }
+.mode-row { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:6px; }
+.mode-row button { padding:4px 10px; }
+.mode-row button[aria-pressed="true"] { color:#fff; background:#11648a; border-color:#11648a; }
 .detection-picker button:disabled { opacity:.55; }
 </style>

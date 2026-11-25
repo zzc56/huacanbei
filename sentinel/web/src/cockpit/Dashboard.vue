@@ -9,8 +9,9 @@ import OverviewPanel from './components/OverviewPanel.vue';
 import UiIcon from './components/UiIcon.vue';
 import type { ViewMode } from './renderers/lightScene';
 import { vehicleFieldLegend } from './core/fieldColors';
+import type { Target } from './types';
 import './styles.css';
-const props = defineProps<{ vehicleView?: ViewMode }>();
+const props = defineProps<{ vehicleView?: ViewMode; cameraPreset?: 'traffic' | 'ball' | 'sports' | null }>();
 const store = useSceneStore();
 const { renderTargets, time } = props.vehicleView ? {
   renderTargets: computed(()=>store.frame.targets),
@@ -29,7 +30,9 @@ const tabs = [
 ] as const;
 const filters = computed(() =>
   mode.value === 'camera'
-    ? [
+    ? props.cameraPreset === 'ball' ? [['all', '全部'], ['sports ball', '球']]
+    : props.cameraPreset === 'sports' ? [['all', '全部'], ['person', '人'], ['sports ball', '球']]
+    : [
         ['all', '全部'],
         ['car', '车辆'],
         ['truck', '货车'],
@@ -42,15 +45,22 @@ const filters = computed(() =>
         ['low', '低风险'],
       ],
 );
-watch(mode, () => {
+watch([mode, () => props.cameraPreset], () => {
   filter.value = 'all';
 });
+const presentedCameraTargets = ref<Target[] | null>(null);
+const cameraTargets = computed(() => props.vehicleView === 'camera'
+  ? presentedCameraTargets.value ?? []
+  : store.frame.targets.filter(t => t.camera || (!props.cameraPreset && t.groundObservation)));
+const cameraSelection = computed(() => props.vehicleView === 'camera'
+  ? cameraTargets.value.find(target=>target.id===store.selectedId)?.camera
+  : store.selected?.camera);
 const targets = computed(() =>
-  store.frame.targets
+  (mode.value === 'camera' ? cameraTargets.value : store.frame.targets)
     .filter((t) => {
       const v = t.risk?.value;
       if (mode.value === 'camera')
-        return (!!t.camera || !!t.groundObservation) && (filter.value === 'all' || (t.camera?.class ?? t.kind) === filter.value);
+        return filter.value === 'all' || (t.camera?.class ?? t.kind) === filter.value;
       if(mode.value === 'radar' && !t.radar || mode.value === 'risk' && !t.fusion)return false;
       return (
         filter.value === 'all' ||
@@ -115,7 +125,7 @@ onUnmounted(() => window.removeEventListener('resize', resize));
           </div>
           <OverviewPanel v-if="mode === 'overview'" :targets="renderTargets" :time="time" @open="mode = $event" />
           <div v-else class="monitor-content">
-            <SceneViewport :mode="mode" :targets="renderTargets" :time="time" />
+            <SceneViewport :mode="mode" :targets="renderTargets" :time="time" @camera-presented="presentedCameraTargets = $event" />
             <aside class="monitor-rail">
               <section class="rail-context">
                 <template v-if="mode === 'risk'"
@@ -167,11 +177,12 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                     <h3>视觉感知</h3>
                     <UiIcon name="camera" :size="18" />
                   </div>
+                  <slot name="camera-controls" />
                   <div class="sensor-stat">
                     <span>当前视觉目标</span
                     ><strong
                       >{{
-                        String(store.frame.targets.filter((t) => t.camera || t.groundObservation).length).padStart(2, '0')
+                        String(cameraTargets.length).padStart(2, '0')
                       }}<small> OBJECTS</small></strong
                     >
                   </div>
@@ -184,8 +195,8 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                       }}</b></span
                     ><span
                       >选中置信度<b>{{
-                        store.selected?.camera
-                          ? (store.selected.camera.confidence * 100).toFixed(1) + '%'
+                        cameraSelection
+                          ? (cameraSelection.confidence * 100).toFixed(1) + '%'
                           : '—'
                       }}</b></span
                     >

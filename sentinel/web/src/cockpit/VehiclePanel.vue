@@ -31,6 +31,7 @@ const endpoint = new URL(import.meta.env.VITE_STREAM_URL || 'http://127.0.0.1:30
 if (endpoint.protocol === 'ws:') endpoint.protocol = 'http:';
 if (endpoint.protocol === 'wss:') endpoint.protocol = 'https:';
 const base = endpoint.origin + '/api/vehicle/';
+const cameraPreset = ref<'traffic' | 'ball' | 'sports' | null>(null);
 const driving = computed(() => view.value === 'drive');
 const calibrating = ref(false);
 const stationaryPose = shallowRef<StationaryPose | null>(null);
@@ -154,9 +155,48 @@ const observationStatus = computed(() => {
   return frame.value.field ? '收到有效观测' : frame.value.capture?.vision ? '摄像头在线' : '等待有效观测';
 });
 let timer: ReturnType<typeof setTimeout> | undefined, active: AbortController | undefined;
+let cameraStream: EventSource | undefined;
 function cancel() {
   clearTimeout(timer);
   active?.abort();
+  active = undefined;
+}
+function receive(data: VehicleResult, started?: number) {
+  if (!data?.motion || !data.observations || !Array.isArray(data.obstacles)) throw Error();
+  const received = performance.now();
+  requestMs.value = started===undefined ? null : Math.round(received-started);
+  receipts = receipts.filter(t => received - t < 1000);
+  receipts.push(received);
+  refreshHz.value = receipts.length;
+  error.value = '';
+  observedFrame.value = data;
+}
+function stopDisplay() {
+  cancel();
+  cameraStream?.close();
+  cameraStream = undefined;
+}
+function startDisplay() {
+  stopDisplay();
+  if (frozen.value || radarOnly.value) return;
+  if (view.value !== 'camera') {
+    void load();
+    return;
+  }
+  const stream = new EventSource(new URL('camera-stream', base));
+  cameraStream = stream;
+  stream.onmessage = event => {
+    if (cameraStream !== stream) return;
+    try {
+      receive(JSON.parse(event.data));
+      cancel();
+    } catch {
+      if (!active) void load();
+    }
+  };
+  stream.onerror = () => {
+    if (cameraStream === stream && !active) void load();
+  };
 }
 async function load() {
   if (radarOnly.value) return;
@@ -175,15 +215,8 @@ async function load() {
     if (!response.ok) throw Error();
     const data: VehicleResult = await response.json();
     if (controller.signal.aborted) return;
-    if (!data?.motion || !data.observations || !Array.isArray(data.obstacles)) throw Error();
-    const received = performance.now();
-    requestMs.value = Math.round(received - started);
-    receipts = receipts.filter(t => received - t < 1000);
-    receipts.push(received);
-    refreshHz.value = receipts.length;
-    error.value = '';
-    observedFrame.value = data;
-    if (!frozen.value) timer = setTimeout(() => void load(), 100);
+    receive(data, started);
+    if (!frozen.value) timer = setTimeout(() => void load(), view.value === 'camera' ? 65 : 100);
   } catch {
     if (controller.signal.aborted) return;
     observedFrame.value = null;
@@ -196,8 +229,7 @@ async function load() {
 }
 function toggle() {
   frozen.value = !frozen.value;
-  if (frozen.value) cancel();
-  else void load();
+  startDisplay();
 }
 watch(driving, enabled => {
   store.videoSource = {type:'mock'};
@@ -209,24 +241,26 @@ watch(radarOnly, enabled => {
     else drive.stop();
   }
   if (enabled) {
-    cancel();
+    stopDisplay();
     observedFrame.value = null;
     error.value = '';
-  } else if (!frozen.value) void load();
+  } else if (driving.value) startDisplay();
 });
+watch(view, startDisplay);
 watch(stationaryPose, () => {
+  if (!driving.value) return;
   observedFrame.value = null;
   if (!radarOnly.value && !frozen.value) void load();
-  else cancel();
+  else stopDisplay();
 });
 onMounted(() => {
-  void load();
+  startDisplay();
   void fetch(new URL('/api/health', endpoint), {signal:AbortSignal.timeout(1500)}).then(r => r.json()).then(h => {
     originalMonitor.value = h.recordingAvailable || h.source === 'recording' ? '历史实测回放' : h.source === 'live' ? '原实时驾驶舱' : '';
   }).catch(() => {});
 });
 onUnmounted(() => {
-  cancel();
+  stopDisplay();
   if (store.videoSource.url?.startsWith('blob:')) URL.revokeObjectURL(store.videoSource.url);
   Object.assign(store, previous);
 });
@@ -253,7 +287,11 @@ onUnmounted(() => {
       <p v-if="error" class="connection" role="alert">{{ error }} <button @click="load()">重试</button></p>
 
       <div class="vehicle-layout" :class="{'detail-layout':view!=='overview' && !driving, 'drive-layout':driving}">
-        <Dashboard v-if="view!=='overview' && view!=='drive'" :vehicle-view="view" />
+        <Dashboard v-if="view!=='overview' && view!=='drive'" :vehicle-view="view" :camera-preset="cameraPreset">
+          <template v-if="view==='camera'" #camera-controls>
+            <CameraDetectionPicker :endpoint="endpoint" @preset-change="cameraPreset = $event" />
+          </template>
+        </Dashboard>
         <template v-else>
         <div class="vehicle-sensors" :class="{'radar-only':radarOnly}">
           <VehicleSensorPanel v-if="!radarOnly" kind="camera" :result="frame">
@@ -271,7 +309,7 @@ onUnmounted(() => {
               <div class="calibration-actions">
                 <button type="button" @click="openCalibration">地面标定</button>
               </div>
-              <CameraDetectionPicker :endpoint="endpoint" />
+              <CameraDetectionPicker :endpoint="endpoint" @preset-change="cameraPreset = $event" />
             </template>
           </VehicleSensorPanel>
           <VehicleSensorPanel kind="lidar" :result="frame" :radar-only="radarOnly"

@@ -24,7 +24,7 @@ import {
 } from '../renderers/lightScene';
 import UiIcon from './UiIcon.vue';
 const props = defineProps<{ mode: ViewMode; targets: Target[]; time: number; compact?: boolean; minimap?: boolean; drivePreview?:boolean }>();
-const emit = defineEmits<{ previewOpen:[] }>();
+const emit = defineEmits<{ previewOpen:[]; cameraPresented:[targets:Target[] | null] }>();
 const store = useSceneStore(),
   canvas = ref<HTMLCanvasElement | null>(null),
   video = ref<HTMLVideoElement | null>(null);
@@ -77,6 +77,12 @@ heat.width = riskGrid.width;
 heat.height = riskGrid.height;
 let lastFieldStamp = '';
 let nextCameraTiming = 0;
+let presentedTargets: Target[] | null = null;
+function publishCameraTargets(targets: Target[] | null) {
+  if (targets === presentedTargets) return;
+  presentedTargets = targets;
+  emit('cameraPresented', targets);
+}
 let cacheKey = '',
   hits: Hit[] = [],
   worker: Worker | undefined,
@@ -152,7 +158,12 @@ onUnmounted(() => {
   if(props.mode==='camera')store.cameraLatencyMs=null;
   worker?.terminate();
 });
-watch(()=>props.mode,(mode,previous)=>{if(previous==='camera'&&mode!=='camera')store.cameraLatencyMs=null;});
+watch(()=>props.mode,(mode,previous)=>{
+  if(previous==='camera'&&mode!=='camera') {
+    store.cameraLatencyMs=null;
+    publishCameraTargets(null);
+  }
+});
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
 useCanvas(canvas, (ctx, w, h) => {
   const key = JSON.stringify(worldBounds.value) + measured.value + props.mode + ':' + w + ':' + h;
@@ -185,12 +196,15 @@ useCanvas(canvas, (ctx, w, h) => {
         const image=v && v.readyState>=2 && !v.seeking && Math.abs(v.currentTime-(ready.meta.videoTimeSeconds??-1))<.06 ? v : ready.image;
         ctx.drawImage(image,box.x,box.y,box.w,box.h);
         hits=cameraTargets(ctx,w,h,ready.targets,store.selectedId,false,box);
+        if(vehicle.value) publishCameraTargets(ready.targets);
       }else{
+        publishCameraTargets(null);
         box=imageBox(store.frame.cameraFrame?.width??800,store.frame.cameraFrame?.height??448,w,h);
         hits=vehicle.value ? [] : cameraTargets(ctx,w,h,props.targets,store.selectedId,false,box);
         text(ctx,vehicle.value ? (store.frame.cameraFrame ? '正在读取对应的图像帧' : vehicle.value.cameraMessage) : store.frame.live?.camera.message??'当前时刻无可用录像帧 · 检测数据工程投影',w/2,h/2,'#466e82',props.compact ? 12 : 15,'center');
       }
     } else if (store.videoSource.type !== 'mock') {
+      publishCameraTargets(null);
       ctx.fillStyle = '#e5eded';
       ctx.fillRect(0, 0, w, h);
       const image = store.videoSource.type === 'carla' ? getImage() : video.value;

@@ -11,6 +11,7 @@
     "localAddress": "192.0.2.20",
     "pythonPath": "",
     "modelPath": "models/yolov8n.pt",
+    "basketballOnnxPath": "",
     "fps": 10,
     "groundCalibration": null
   }

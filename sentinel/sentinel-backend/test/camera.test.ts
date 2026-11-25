@@ -18,17 +18,68 @@ test('selecting a supported class filters live and buffered camera observations'
   const now=Date.now();
   assert.ok(camera.accept({
     sequence:1,capturedAt:now,width:320,height:240,detector:'local',jpeg:Buffer.from([255,216,255,217]).toString('base64'),
-    detections:['person','sports ball','bottle'].map((label,i)=>({x:15+i*10,y:25,width:20,height:25,label,score:.9,track_id:'V00'+i})),
+    detections:['person','sports ball','bottle','sports ball'].map((label,i)=>({x:15+i*10,y:25,width:20,height:25,label,score:.9,track_id:'V00'+i,
+      ...(i===3 ? {previewOnly:true} : {})})),
   },now));
   const url='/api/vehicle/camera-classes';
   const save=(selected:string[])=>app.inject({method:'POST',url,headers:{origin},payload:{selected}});
-  assert.deepEqual((await app.inject(url)).json(),{available:['person','sports ball','bottle'],selected:['person']});
+  assert.deepEqual((await app.inject(url)).json(),{available:['person','sports ball','bottle'],selected:['person'],preset:'traffic'});
+  const usePreset=(preset:string)=>app.inject({method:'POST',url,headers:{origin},payload:{preset}});
+  assert.equal((await usePreset('unknown')).statusCode,400);
+  assert.equal((await usePreset('ball')).json().preset,'ball');
+  const capture=camera.snapshot(now);
+  assert.deepEqual(capture.vision?.detections.map(box=>box.label),['person']);
+  assert.deepEqual(camera.displaySnapshot(capture,now).vision?.detections.map(box=>box.label),['sports ball','sports ball']);
+  assert.deepEqual((await usePreset('sports')).json().selected,['person','sports ball']);
+  assert.deepEqual(camera.displaySnapshot(capture,now).vision?.detections.map(box=>box.label),['person','sports ball','sports ball']);
+  assert.deepEqual(camera.snapshot(now).vision?.detections.map(box=>box.label),['person']);
+  assert.equal((await usePreset('traffic')).json().preset,'traffic');
+  assert.deepEqual(camera.displaySnapshot(capture,now).vision?.detections.map(box=>box.label),['person']);
   assert.equal((await save(['unknown'])).statusCode,400);
   assert.equal((await save(['sports ball','bottle'])).statusCode,200);
   assert.deepEqual(camera.snapshot(now).vision?.detections.map(box=>box.label),['sports ball','bottle']);
   assert.deepEqual(camera.snapshotsSince(now,now)[0]?.vision?.detections.map(box=>box.label),['sports ball','bottle']);
   camera['updateDetectionCatalog'](['person','sports ball','bottle']);
   assert.deepEqual(camera.detectionSettings().selected,['sports ball','bottle']);
+});
+
+test('the camera stream pushes the matching capture as soon as a new frame arrives', async ()=>{
+  const app = Fastify(), camera = new CameraFrameStore();
+  registerVehicleRisk(app, camera, '');
+  const origin = await app.listen({host:'127.0.0.1',port:0});
+  const controller = new AbortController();
+  const timeout = AbortSignal.any([controller.signal, AbortSignal.timeout(2500)]);
+  try {
+    const response = await fetch(origin+'/api/vehicle/camera-stream', {signal:timeout});
+    assert.match(response.headers.get('content-type') ?? '', /^text\/event-stream/);
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let pending = '';
+    async function nextFrame(): Promise<VehicleResult> {
+      while (!pending.includes('\n\n')) {
+        const {value,done} = await reader.read();
+        assert.equal(done,false);
+        pending += decoder.decode(value,{stream:true});
+      }
+      const boundary = pending.indexOf('\n\n');
+      const event = pending.slice(0,boundary);
+      pending = pending.slice(boundary+2);
+      return JSON.parse(event.slice('data: '.length));
+    }
+    assert.equal((await nextFrame()).capture?.vision,null);
+    assert.ok(camera.accept({
+      sequence:1,capturedAt:Date.now(),width:320,height:240,detector:'local',
+      jpeg:Buffer.from([255,216,255,217]).toString('base64'),
+      detections:[{x:120,y:48,width:80,height:72,label:'person',score:.95,track_id:'V001'}],
+    }));
+    const frame = await nextFrame();
+    assert.equal(frame.capture?.vision?.sequence,1);
+    assert.equal(frame.capture?.vision?.imageUrl,'/api/live/camera/1.jpg');
+    assert.equal(frame.capture?.vision?.detections[0]?.track_id,'V001');
+  } finally {
+    controller.abort();
+    await app.close();
+  }
 });
 
 test('saving live calibration persists four ground points and updates projections', async t=>{

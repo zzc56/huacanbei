@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import type { ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
 import { Ajv } from 'ajv';
 import { evaluateVehicleRisk, vehicleLimits, type VehicleFrame } from './risk.js';
@@ -67,8 +68,9 @@ export function registerVehicleRisk(app: FastifyInstance, camera?: CameraFrameSt
   function current(now: number) {
     const result = evaluateVehicleRisk(latest, now);
     if (camera) {
-      result.capture = camera.snapshot(now);
-      result.observations.camera ??= projectedCameraPreview(result.capture, calibration, now, vehicleLimits.maxAgeMs);
+      const capture = camera.snapshot(now);
+      result.observations.camera ??= projectedCameraPreview(capture, calibration, now, vehicleLimits.maxAgeMs);
+      result.capture = camera.displaySnapshot(capture, now);
     }
     return result;
   }
@@ -76,6 +78,43 @@ export function registerVehicleRisk(app: FastifyInstance, camera?: CameraFrameSt
     reply.header('Cache-Control', 'no-store');
     return current(Date.now());
   });
+  if (camera) {
+    const streams = new Set<ServerResponse>();
+    app.addHook('preClose', async () => {
+      for (const stream of streams) stream.end();
+    });
+    app.get('/api/vehicle/camera-stream', (_request, reply) => {
+      reply.hijack();
+      const response = reply.raw;
+      const origin = reply.getHeader('access-control-allow-origin');
+      if (typeof origin === 'string') {
+        response.setHeader('Access-Control-Allow-Origin', origin);
+        response.setHeader('Vary', 'Origin');
+      }
+      response.writeHead(200, {
+        'Content-Type':'text/event-stream; charset=utf-8',
+        'Cache-Control':'no-store, no-transform',
+        'X-Accel-Buffering':'no',
+      });
+      streams.add(response);
+      let lastSent = 0;
+      function send() {
+        if (response.destroyed || response.writableNeedDrain) return;
+        lastSent = Date.now();
+        response.write('data: ' + JSON.stringify(current(lastSent)) + '\n\n');
+      }
+      const unsubscribe = camera.onFrame(send);
+      const heartbeat = setInterval(() => {
+        if (Date.now() - lastSent >= 500) send();
+      }, 500);
+      response.once('close', () => {
+        streams.delete(response);
+        unsubscribe();
+        clearInterval(heartbeat);
+      });
+      send();
+    });
+  }
   app.get('/api/vehicle/config', async () => vehicleLimits);
   if (camera && readStationaryRadar) {
     app.get<{ Querystring: StationaryPose }>('/api/vehicle/stationary-fusion', {
@@ -103,18 +142,19 @@ export function registerVehicleRisk(app: FastifyInstance, camera?: CameraFrameSt
           })
         : [];
       const preview = projections[0];
+      const display = camera.displaySnapshot(preview?.frame ?? capture, now);
       for (const {sample} of projections) {
         const lidar = scans.find(scan=>Math.abs(scan.capturedAtMs - sample.capturedAtMs) <= vehicleLimits.maxSkewMs);
         if (!lidar) continue;
         const pose = {xM,yM,headingDeg,speedMps:0,capturedAtMs:lidar.capturedAtMs};
-        return {...evaluateVehicleRisk({pose,camera:sample,lidar}, now), capture:preview?.frame ?? capture, stationaryFusion:'aligned'};
+        return {...evaluateVehicleRisk({pose,camera:sample,lidar}, now), capture:display, stationaryFusion:'aligned'};
       }
       const stationaryFusion: StationaryFusionState = !telemetry ? 'waiting_for_pose' : !scans.length ? 'waiting_for_radar' :
         !preview ? 'waiting_for_camera' : 'waiting_for_sync';
       const result = evaluateVehicleRisk(null, now);
       result.observations.camera = preview?.sample ?? projected;
       result.observations.lidar = scans[0] ? {...scans[0],includedInFusion:false} : null;
-      return {...result,capture:preview?.frame ?? capture,stationaryFusion};
+      return {...result,capture:display,stationaryFusion};
     });
   }
   if (camera && editor) {
