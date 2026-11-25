@@ -27,7 +27,7 @@ npm.cmd --prefix sentinel/web run build
 
 ## 运行参赛版
 
-服务启动后，可打开 [SENTINEL 首页](http://127.0.0.1:4173/)。在首页点击「登录」，可注册邮箱账号或重置密码。发信配置见[后端说明](sentinel/sentinel-backend/README.md#邮箱注册与密码重置)。
+服务启动后，可打开 [SENTINEL 首页](http://127.0.0.1:4173/)。在首页点击「登录」，可注册邮箱账号或重置密码。发信配置见[后端说明](sentinel/sentinel-backend/README.md#邮箱注册与密码重置)。需要让不同电脑使用同一个账号库和发信邮箱时，将下载版指向同一个 HTTPS 账号服务，见[共用发信邮箱](sentinel/sentinel-backend/README.md#共用发信邮箱)。
 
 ### 实时设备
 
@@ -43,7 +43,7 @@ node sentinel/launch.mjs live
 
 ### 历史回放
 
-运行 `node sentinel/launch.mjs recording`，或双击 `sentinel/启动历史回放.cmd`，打开自带的录像、雷达和风险场数据。实时连接和历史回放共用驾驶舱，可在工具栏直接切换。后端监听本机 3001 端口。
+运行 `node sentinel/launch.mjs recording`，或双击 `sentinel/启动历史回放.cmd`，打开自带的录像、雷达和风险场数据。回放进入后默认暂停，点击播放按钮开始播放，可在工具栏选择 0.5×、1×、1.5× 或 2×。实时连接和历史回放共用驾驶舱，可在工具栏直接切换。后端监听本机 3001 端口。
 
 在「历史回放」点击「导入回放」，可选择 Sentinel 导出的 ZIP，或同一次采集的录像和配套数据。「回放库」可以保存当前回放、挑选已保存的录制并导出 ZIP，包内含可单独查看的目标数据 CSV。账号与回放库分别保存在本机 SQLite 数据库。
 
