@@ -113,7 +113,7 @@ export class LiveCamera extends CameraFrameStore {
   constructor(private options:CameraOptions={}) {
     super();
     this.detectionLabels = new Set(defaultDetectionLabels);
-    this.displayPreset = 'traffic';
+    this.displayPreset = process.env['SOURCE_MODE'] === 'vehicle' ? 'sports' : 'traffic';
     const url=options.url??process.env['CAMERA_RTSP_URL'];
     if(url || /^\d+$/.test(process.env['CAMERA_DEVICE_INDEX']??''))this.start(url??'');
   }

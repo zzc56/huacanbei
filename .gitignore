@@ -16,7 +16,9 @@ Thumbs.db
 /sentinel/config/*
 !/sentinel/config/devices.example.json
 /sentinel/logs/
-/sentinel/models/
+/sentinel/models/*
+!/sentinel/models/yolov8n-fast.onnx
+!/sentinel/models/swish-ball-validation.onnx
 /sentinel/数据保存/
 /sentinel/验证记录/
 /sentinel/sentinel-backend/media/

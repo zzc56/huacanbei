@@ -10,11 +10,12 @@ if(!['live','recording','vehicle','--check'].includes(mode))throw Error('使用 
 const settings=(mode==='live'||mode==='--check'||mode==='vehicle'&&existsSync(join(root,'config/devices.json')))?loadSettings():null;
 for(const file of ['web/dist/index.html','sentinel-backend/dist/src/main.js','sentinel-backend/node_modules/fastify/package.json'])
   if(!existsSync(join(root,file)))throw Error('迁移包缺少文件：'+file);
-if(mode!=='vehicle'&&settings?.config.camera.enabled&&!existsSync(settings.model))
+if(mode!=='vehicle'&&settings?.config.camera.enabled&&!existsSync(settings.model)&&!existsSync(settings.onnxModel))
   throw Error('找不到摄像头检测模型：'+settings.model);
 if(mode==='--check'){
   console.log(JSON.stringify({root,node:process.version,pythonReady:settings.pythonReady,python:settings.python,
-    model:settings.model,radar:settings.config.radar.host,camera:settings.config.camera.deviceIndex ?? new URL(settings.config.camera.rtspUrl).hostname,
+    model:settings.onnxModel||settings.model,basketballModel:settings.basketballModel||null,
+    radar:settings.config.radar.host,camera:settings.config.camera.deviceIndex ?? new URL(settings.config.camera.rtspUrl).hostname,
     sourceFilesReady:true},null,2));
 }else{
   mkdirSync(join(root,'logs'),{recursive:true});

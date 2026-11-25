@@ -35,15 +35,26 @@ npm.cmd --prefix sentinel/web run build
 
 #### 球类识别
 
-拉取代码后重新构建前端和后端，再启动 `node sentinel/launch.mjs vehicle`。在「摄像头感知」选择 **B · 球类** 或 **C · 人和球**。默认启动为 A · 人车。
+该分支包含通用 YOLOv8n ONNX 和篮球专用 ONNX，普通 `git clone` 或 `git pull` 会一起下载。使用 `devices.example.json` 协助配置本机摄像头地址和 Python 路径。更新后，在仓库根目录运行：
 
-- 基础方案使用本机的通用 YOLO 权重，加上仓库中的篮球外观补检和短时跟踪。请按下方「实时设备」配置摄像头、Python 和 `sentinel/models/yolov8n.pt`。缺少参赛包里的通用权重时，可从 [Ultralytics YOLOv8 官方文档](https://docs.ultralytics.com/models/yolov8/) 获取 `yolov8n.pt`。
-- 需要篮球专用模型时，在配置摄像头所用的 Python 环境安装 `onnxruntime`。将有授权的篮球检测 ONNX 文件放进 `sentinel/models/`，在本机 `devices.json` 的 `camera.basketballOnnxPath` 填入例如 `models/basketball.onnx`，再重启。此接入支持固定输入尺寸、含 `basketball` 类别元数据、未内嵌 NMS 的 Ultralytics 检测导出。通用 YOLO 仍负责识别人和其他类别。
-- 页面的视频信息出现「篮球专用」表示专用模型已加载。权重和设备配置由各电脑本地保存，分支包含识别代码与配置模板。留空 `basketballOnnxPath` 时使用基础方案。
+```powershell
+# 首次安装环境时创建虚拟环境。已有环境时用 devices.json 中的 Python 路径执行安装。
+py -3.11 -m venv sentinel/.venv
+sentinel/.venv/Scripts/python.exe -m pip install -r sentinel/requirements-camera.txt
+npm.cmd --prefix sentinel/sentinel-backend ci
+npm.cmd --prefix sentinel/sentinel-backend run build
+npm.cmd --prefix sentinel/web ci
+npm.cmd --prefix sentinel/web run build
+node sentinel/launch.mjs vehicle
+```
+
+「摄像头感知」默认使用 **C · 人和球**，也可以选择 **B · 球类**。页面的视频信息出现「篮球专用」表示专用模型已加载。可以在本机 `devices.json` 用 `camera.basketballOnnxPath` 指定其他固定尺寸、含 `basketball` 类别、未内嵌 NMS 的检测 ONNX。留空会自动使用随分支的模型，设为 `false` 可改用通用检测和篮球外观补检。
+
+模型来源为 [Ultralytics YOLOv8](https://docs.ultralytics.com/models/yolov8/) 和 [Swish-Vision](https://github.com/ahmedsilat44/Swish-Vision/blob/HEAD/models/best.pt) 的 ONNX 导出。
 
 ### 实时设备
 
-将 `sentinel/config/devices.example.json` 复制为 `sentinel/config/devices.json`，填写 TCR300 的地址、端口和电脑侧网卡地址。模板默认关闭摄像头。启用摄像头时，需要 Python 3.10 或 3.11、与设备匹配的 PyTorch 和 `sentinel/requirements-camera.txt` 中的依赖。将原参赛包的 `yolov8n.pt` 放入 `sentinel/models/`，或在本机配置中指定模型路径。模型及检测库的许可文本见 [Ultralytics AGPL-3.0](sentinel/licenses/ultralytics-AGPL-3.0.txt)。
+将 `sentinel/config/devices.example.json` 复制为 `sentinel/config/devices.json`，填写 TCR300 的地址、端口和电脑侧网卡地址。模板默认关闭摄像头。启用摄像头时，需要 Python 3.10 或 3.11、与设备匹配的 PyTorch 和 `sentinel/requirements-camera.txt` 中的依赖。启用后可直接使用随分支的通用 ONNX，也可在本机配置中指定模型路径。检测库的许可文本见 [Ultralytics AGPL-3.0](sentinel/licenses/ultralytics-AGPL-3.0.txt)。
 
 ```powershell
 node sentinel/launch.mjs --check
@@ -55,4 +66,4 @@ node sentinel/launch.mjs live
 
 从原参赛包恢复 `sentinel/数据保存/` 和 `sentinel/sentinel-backend/media/` 的原有目录结构，然后运行 `node sentinel/launch.mjs recording`。两个模式的网页均在 [127.0.0.1:4173](http://127.0.0.1:4173/)，后端监听本机 3001 端口。切换模式前用 Ctrl+C 退出当前服务。
 
-原始实测记录、视频、截图、旧演示图片、模型权重和本机配置保存在原参赛包或本机。前端保留用于测试数据适配的数值样例和其中的媒体路径。
+原始实测记录、视频、截图、旧演示图片和本机设备配置保存在原参赛包或本机。前端保留用于测试数据适配的数值样例和其中的媒体路径。
