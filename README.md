@@ -57,3 +57,5 @@ npm.cmd --prefix sentinel/web test
 ```
 
 依赖原始记录和媒体的后端测试会在缺少相应文件时跳过。前端实测回放集成测试需要启动回放服务并设置 `REAL_DATA_INTEGRATION=1`。
+
+雷视风险场的模拟数据与 Web 绘制验证步骤见[稳定性实验](sentinel/experiments/radar-vision-stability/README.md)。
