@@ -34,7 +34,7 @@ export function useRecordedCamera(video: Ref<HTMLVideoElement | null>, enabled?:
       if(success&&(latest||live)&&
         (!live||!store.playing&&latest||Date.now()-request.meta.timestamp<=maxAgeMs)){
         ready.value={image,targets:request.targets,meta:request.meta};syncVideo();
-      }else if(latest)ready.value=null;
+      }else if(latest&&request.source!=='vehicle')ready.value=null;
       if(!success)image.src='';
       loadLatest();
     };

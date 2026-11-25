@@ -3,12 +3,25 @@ export interface GroundPoint {
   yM: number;
 }
 
-export interface CameraPoint extends GroundPoint { trackId?: string }
+export interface StationaryPose extends GroundPoint {
+  headingDeg: number;
+  stationaryId: string;
+}
+
+export type StationaryFusionState = 'waiting_for_pose' | 'waiting_for_radar' | 'waiting_for_camera' | 'waiting_for_sync' | 'aligned';
+
+export interface GroundVelocity {
+  xMps: number;
+  yMps: number;
+}
+
+export interface CameraPoint extends GroundPoint { trackId?: string; velocity?: GroundVelocity }
 
 export interface ScanPoint {
   rangeM: number;
   bearingDeg: number;
   trackId?: string;
+  velocity?: GroundVelocity;
 }
 
 export interface SensorSample<T> {
@@ -22,6 +35,12 @@ export interface VehicleObstacle extends GroundPoint {
   source: 'camera' | 'lidar' | 'both';
   cameraIndex?: number;
   lidarIndex?: number;
+  velocity?: GroundVelocity;
+}
+
+export interface RightTurnCorridor {
+  forwardM: number;
+  rightM: number;
 }
 
 export interface VehicleField {
@@ -33,6 +52,7 @@ export interface VehicleField {
   values: number[];
   corridorHalfWidthM: number;
   lookAheadM: number;
+  corner?: RightTurnCorridor;
 }
 
 export interface VehicleResult {
@@ -41,6 +61,7 @@ export interface VehicleResult {
     lidar: SensorView<ScanPoint> | null;
   };
   capture?: ReturnType<import('../live/camera.js').CameraFrameStore['snapshot']>;
+  stationaryFusion?: StationaryFusionState;
   evaluatedAtMs: number;
   obstacles: VehicleObstacle[];
   field: VehicleField | null;
@@ -51,25 +72,53 @@ export interface VehicleResult {
   motion: {
     action: 'cruise' | 'slow' | 'stop';
     speedLimitMps: number;
-    reason: 'near_obstacle' | 'forward_risk' | 'camera_unavailable' | 'path_clear' | 'pose_or_lidar_unavailable';
+    reason: 'near_obstacle' | 'forward_risk' | 'blind_corner' | 'camera_unavailable' | 'path_clear' | 'pose_or_lidar_unavailable';
   };
 }
 
-export interface VehicleDemoResult extends VehicleResult {
-  step: number;
-  lastStep: number;
-  tickMs: number;
-  stages: number[];
+export const radarTrialSettings = { speedMmps: 400, stopDistanceM: 0.40 } as const;
+export type DriveDirection = 'forward' | 'stop';
+export interface StockTelemetry {
+  port: string;
+  status: 'idle' | 'connecting' | 'online' | 'stale' | 'error' | 'busy';
+  sample: { wheelAMps: number; wheelBMps: number; batteryPercent: number | null; receivedAtMs: number } | null;
+  readyForRadarTrial?: boolean;
+  stationaryId?: string;
+  lidar?: StockLidarPreview;
 }
 
-export type DriveDirection = 'forward' | 'reverse' | 'stop';
-export interface DriveSnapshot {
-  frame: VehicleResult;
-  preview?: VehicleResult['capture'];
+export interface StockLidarPreview {
+  status: 'waiting' | 'offline' | 'stale' | 'online';
+  sample: StockLidarSample | null;
+}
+
+export interface StockLidarSample {
+  sequence: number;
+  capturedTickMs: number;
+  receivedAtMs: number;
+  nearest: ScanPoint | null;
+}
+
+export type RadarStopMeasurement =
+  | { status: 'measuring'; beforeM: number; wheelSpeedMps: number }
+  | { status: 'complete'; beforeM: number; afterM: number; reductionM: number; wheelSpeedMps: number }
+  | { status: 'unavailable'; message: string };
+
+export interface BenchDriveStatus {
+  phase: 'arming' | 'ready' | 'stopped';
+  message: string;
   direction: DriveDirection;
-  requestedMps: number;
-  limitMps: number;
-  speedMps: number;
-  travelM: number;
-  timedOut: boolean;
+  speedLimitMps: number;
+  targetSpeedMps: number;
+  radarTrial: {
+    state: 'clear' | 'obstacle' | 'release' | 'unavailable';
+    stopDistanceM: number;
+    measurement?: RadarStopMeasurement;
+  };
+}
+
+export interface DriveSnapshot {
+  telemetry?: StockTelemetry;
+  bench?: BenchDriveStatus;
+  radarRisk?: VehicleResult;
 }

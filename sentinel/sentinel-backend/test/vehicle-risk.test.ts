@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildApp } from '../src/app.js';
 import { evaluateVehicleRisk, type VehicleFrame } from '../src/vehicle/risk.js';
-import type { VehicleDemoResult, VehicleResult } from '../src/vehicle/contracts.js';
+import type { VehicleResult } from '../src/vehicle/contracts.js';
 
 test('车路观测进入同一张风险图，输出巡航、提前减速和停车', async t => {
   const app = buildApp('vehicle');
@@ -66,26 +66,19 @@ test('车路观测进入同一张风险图，输出巡航、提前减速和停�
   assert.equal(rejected.statusCode, 400);
 });
 
-test('演示按上一帧限速接近固定行人，并与上传的观测隔离', async t => {
-  const app = buildApp('vehicle');
-  t.after(() => app.close());
-  const get = async (step: number) => (await app.inject('/api/vehicle/demo/' + step)).json<VehicleDemoResult>();
-  const initial = await get(0);
-  const shots = await Promise.all(initial.stages.map(get));
-  assert.deepEqual(shots.map(s => [s.motion.action, s.cameraCount, s.lidarCount, s.obstacles.length]), [
-    ['cruise', 0, 0, 0], ['slow', 1, 0, 1], ['slow', 1, 1, 1], ['stop', 1, 1, 1],
-  ]);
-  assert.deepEqual(shots.map(s => s.obstacles[0]?.source), [undefined, 'camera', 'both', 'both']);
-  assert.deepEqual(shots.map(s => [s.observations.camera?.observations.length, s.observations.lidar?.observations.length]),
-    [[0, 0], [1, 0], [1, 1], [1, 1]]);
-  assert.equal(shots.at(-1)?.step, initial.lastStep);
-  const next = await get(shots[1]!.step + 1);
-  const travel = shots[1]!.closestForwardM! - next.closestForwardM!;
-  assert.ok(Math.abs(travel - shots[1]!.motion.speedLimitMps * initial.tickMs / 1000) < 1e-6);
-  assert.equal((await app.inject('/api/vehicle/demo/10000')).statusCode, 400);
-  const latest = (await app.inject('/api/vehicle/frame')).json<VehicleResult>();
-  assert.equal(latest.field, null);
-  assert.equal(latest.motion.speedLimitMps, 0);
+test('移动障碍即将进入弯道时，固定摄像头观测可触发停车判定', () => {
+  const pedestrian = { xM: .9, yM: 1.30 };
+  const frame: VehicleFrame = {
+    pose: { xM: 0, yM: .75, headingDeg: 0, speedMps: 0, capturedAtMs: 1000 },
+    camera: { capturedAtMs: 1000, observations: [pedestrian] },
+    lidar: { capturedAtMs: 1000, observations: [] },
+  };
+  const corner = { forwardM: .25, rightM: 1.10 };
+  assert.equal(evaluateVehicleRisk(frame, 1000, corner).motion.action, 'cruise');
+  frame.camera!.observations = [{ ...pedestrian, velocity: { xMps: 0, yMps: -.5 } }];
+  const entering = evaluateVehicleRisk(frame, 1000, corner);
+  assert.equal(entering.motion.action, 'stop');
+  assert.equal(entering.motion.reason, 'blind_corner');
 });
 
 test('按位姿时间补偿雷达距离，丢弃不同步的观测，保留相邻但不匹配的目标', () => {

@@ -355,7 +355,7 @@ function inspect(event: MouseEvent) {
             ? 'RANGE · AZIMUTH · VELOCITY'
             : vehicle ? '车身 XY · 前向风险' : store.frame.live ? 'XY 等比例 · 圆形风险范围 / 未联合标定' : measured ? 'XY 等比例 · RECORDED FIELD / VALID MASK' : 'RISK DISTRIBUTION / DEMO MODEL'
       }}</span
-      ><span>{{ store.selectedId }}<i />{{ vehicle && !vehicle.demo ? new Date(store.frame.timestamp).toLocaleTimeString('zh-CN') : ((store.frame.replay?.positionMs ?? (store.frame.live ? store.frame.timestamp-store.frame.live.startedAt : store.frame.timestamp)) / 1000).toFixed(1)+' s' }}</span>
+      ><span>{{ store.selectedId }}<i />{{ vehicle ? new Date(store.frame.timestamp).toLocaleTimeString('zh-CN') : ((store.frame.replay?.positionMs ?? (store.frame.live ? store.frame.timestamp-store.frame.live.startedAt : store.frame.timestamp)) / 1000).toFixed(1)+' s' }}</span>
     </div>
     <div v-if="mode === 'camera' && compact" class="scene-tools">
       <template v-if="drivePreview">

@@ -109,7 +109,7 @@ if model_path and Path(model_path).is_file():
             # Ultralytics resets CPU threads during predictor setup. Set the
             # measured low-latency thread count after setup, before live inference.
             model.predict(np.zeros((448, 800, 3), dtype=np.uint8), imgsz=imgsz,
-                          conf=0.3, classes=[0,1,2,3,5,7], max_det=100, device=device, verbose=False)
+                          conf=0.3, max_det=100, device=device, verbose=False)
             if device == "cpu":
                 torch.set_num_threads(cpu_threads)
     except Exception:
@@ -136,7 +136,7 @@ def detect():
         if model is not None:
             try:
                 with contextlib.redirect_stdout(sys.stderr):
-                    result = model.predict(frame, imgsz=imgsz, conf=0.3, classes=[0,1,2,3,5,7],
+                    result = model.predict(frame, imgsz=imgsz, conf=0.3,
                                            max_det=100, device=device, verbose=False)[0]
                 used = set()
                 stale = [k for k, v in tracks.items() if captured - v["time"] >= 0.75]
@@ -172,6 +172,8 @@ def detect():
 
 
 if model is not None:
+    names = model.names
+    emit({"type": "camera_classes", "labels": list(names.values()) if isinstance(names, dict) else list(names)})
     threading.Thread(target=detect, daemon=True).start()
 
 sequence = 0

@@ -23,5 +23,7 @@ export function loadSettings(){
     CAMERA_RTSP_URL:c.enabled&&!usb&&existsSync(python)?c.rtspUrl:'',
     CAMERA_DEVICE_INDEX:c.enabled&&usb&&existsSync(python)?String(c.deviceIndex):'',
     CAMERA_PYTHON:python,CAMERA_MODEL_PATH:model,CAMERA_FPS:String(Math.max(1,Math.min(15,Number(c.fps)||10))),
+    CAMERA_GROUND_CALIBRATION:c.groundCalibration ? JSON.stringify(c.groundCalibration) : '',
+    SENTINEL_DEVICE_CONFIG_PATH:configPath,
   }};
 }

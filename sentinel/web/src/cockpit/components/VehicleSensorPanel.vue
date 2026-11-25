@@ -1,18 +1,28 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { VehicleResult } from '../../../../sentinel-backend/src/vehicle/contracts';
+import type { StockLidarPreview, VehicleResult } from '../../../../sentinel-backend/src/vehicle/contracts';
 import UiIcon from './UiIcon.vue';
 
-const props = defineProps<{ kind: 'camera' | 'lidar'; result: VehicleResult | null; simulated?:boolean }>();
+const props = defineProps<{ kind: 'camera' | 'lidar'; result: VehicleResult | null; hardwareLidar?: StockLidarPreview; radarOnly?: boolean }>();
 const isCamera = computed(() => props.kind === 'camera');
 const sample = computed(() => props.result?.observations?.[props.kind]);
 const cameraPoints = computed(() => props.result?.observations?.camera?.observations ?? []);
-const scan = computed(() => props.result?.observations?.lidar?.observations ?? []);
-const count = computed(() => sample.value?.observations.length);
+const scan = computed(() => {
+  if (!props.hardwareLidar) return props.result?.observations?.lidar?.observations ?? [];
+  const nearest = props.hardwareLidar.sample?.nearest;
+  return nearest ? [nearest] : [];
+});
+const count = computed(() => props.hardwareLidar ? scan.value.length : sample.value?.observations.length);
 const pixels = computed(() => isCamera.value ? props.result?.capture?.vision : null);
-const countLabel = computed(()=>pixels.value ? pixels.value.detections.length+' 个检测框'
-  : count.value==null ? '等待观测' : count.value+' 个目标');
-const title = computed(() => isCamera.value ? '固定摄像头' : '车载雷达');
+const title = computed(() => isCamera.value ? '固定摄像头' : props.hardwareLidar ? '车载雷达实测' : '车载雷达');
+const hardwareStatus = {
+  waiting:'等待上报', offline:'暂无完整扫描', stale:'反馈超时', online:'扫描在线',
+};
+const countLabel = computed(() => {
+  if (props.hardwareLidar && props.hardwareLidar.status !== 'online') return hardwareStatus[props.hardwareLidar.status];
+  if (pixels.value) return pixels.value.detections.length + ' 个检测框';
+  return count.value == null ? '等待观测' : '当前帧 ' + count.value + ' 个目标';
+});
 
 // Equal distances on both ground axes occupy equal screen space.
 const ground = computed(() => {
@@ -37,11 +47,11 @@ const radarDots = computed(() => scan.value.map(p => {
   <section class="glass-panel sensor-panel" :class="kind" :aria-label="title + '观测'">
     <header>
       <div class="section-heading"><h2>{{ title }}</h2></div>
-      <span class="count">{{ simulated ? (sample ? (isCamera ? '模拟 · ' : '')+'当前帧 '+count+' 个目标' : '未连接') : countLabel }}</span>
+      <span class="count">{{ countLabel }}</span>
     </header>
     <div class="plot-caption"><span><UiIcon :name="isCamera ? 'camera' : 'radar'" :size="15" />
-      {{ simulated ? (isCamera ? '模拟视觉观测 · 场地坐标' : '模拟雷达 · 融合前点迹') : isCamera ? ($slots.camera ? '摄像画面 · 标定位置见下方' : '场地坐标 · 俯视') : '车身方位 · 俯视' }}</span>
-      <span v-if="sample && !sample.includedInFusion" class="unused">未参与融合</span>
+      {{ hardwareLidar ? '前向 ±20° · 最近回波' : isCamera ? ($slots.camera ? '摄像画面 · 标定位置见下方' : '场地坐标 · 俯视') : '车身方位 · 俯视' }}</span>
+      <span v-if="!radarOnly && (hardwareLidar || (sample && !sample.includedInFusion))" class="unused">未参与融合</span>
     </div>
     <slot v-if="$slots.camera && isCamera" name="camera" />
     <svg v-else-if="isCamera" viewBox="0 0 268 129" class="sensor-plot" role="img" aria-label="固定摄像头检测目标的地面位置">
@@ -67,17 +77,17 @@ const radarDots = computed(() => scan.value.map(p => {
         <text x="133" y="124" text-anchor="middle">外圈 {{ radarRange }} m</text></g>
       <g v-for="(p, i) in radarDots" :key="i" :transform="'translate(' + p.x + ',' + p.y + ')'">
         <circle r="6.5" class="mark" /><circle r="2.7" class="dot" />
-        <text v-if="simulated" x="9" y="-4" class="axis-text">L{{ i+1 }}</text>
       </g>
     </svg>
     <div v-if="count" class="sensor-targets" tabindex="0" :aria-label="title + '目标清单'">
       <template v-if="isCamera">
-        <div v-for="(p, i) in cameraPoints" :key="i"><b>C{{ i+1 }}</b><span>X {{ p.xM.toFixed(2) }} m</span><span>Y {{ p.yM.toFixed(2) }} m</span></div>
+        <div v-for="(p, i) in cameraPoints" :key="i"><b>{{ p.trackId ?? 'C' + (i + 1) }}</b><span>X {{ p.xM.toFixed(2) }} m</span><span>Y {{ p.yM.toFixed(2) }} m</span></div>
       </template>
       <template v-else>
-        <div v-for="(p, i) in scan" :key="i"><b>L{{ i+1 }}</b><span>距离 {{ p.rangeM.toFixed(2) }} m</span><span>方位 {{ p.bearingDeg.toFixed(1) }}°</span></div>
+        <div v-for="(p, i) in scan" :key="i"><b>{{ p.trackId ?? 'L' + (i + 1) }}</b><span>距离 {{ p.rangeM.toFixed(2) }} m</span><span>方位 {{ p.bearingDeg.toFixed(1) }}°</span></div>
       </template>
     </div>
+    <p v-else-if="hardwareLidar">{{ hardwareLidar.status === 'online' ? '本次扫描在 0.10–2.00 m 内无回波' : '等待雷达有效扫描' }}</p>
     <p v-else>{{ pixels ? '地面观测 · '+(sample ? '本帧无定位目标' : '等待标定坐标') : sample ? '本帧未发现目标' : '等待有效观测' }}</p>
   </section>
 </template>

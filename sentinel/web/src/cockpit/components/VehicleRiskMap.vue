@@ -4,7 +4,7 @@ import type { VehicleResult } from '../../../../sentinel-backend/src/vehicle/con
 import { contourPath } from '../core/contours';
 import { paintFieldCell } from '../core/fieldColors';
 
-const props = defineProps<{ result: VehicleResult | null; corridor: boolean; contours: boolean }>();
+const props = defineProps<{ result: VehicleResult | null; corridor: boolean; contours: boolean; emptyText?: string }>();
 const canvas = ref<HTMLCanvasElement>();
 const heat = document.createElement('canvas');
 let observer: ResizeObserver;
@@ -19,19 +19,26 @@ function draw() {
   const ctx = el?.getContext('2d');
   if (!el || !ctx || !el.clientWidth || !el.clientHeight) return;
   const w = el.clientWidth, h = el.clientHeight, dpr = window.devicePixelRatio || 1;
-  el.width = Math.round(w * dpr);
-  el.height = Math.round(h * dpr);
-  ctx.scale(dpr, dpr);
+  const pixelWidth = Math.round(w * dpr), pixelHeight = Math.round(h * dpr);
+  if (el.width !== pixelWidth) el.width = pixelWidth;
+  if (el.height !== pixelHeight) el.height = pixelHeight;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
   if (!field || !result) return;
 
   // Equal metre scales on both axes. Extra room shows more of the computed grid.
-  const farthest = Math.max(field.lookAheadM, ...result.obstacles.map(o => o.yM));
-  const depth = Math.min(field.height * field.resolution, farthest + 0.25);
-  const halfWidth = Math.min(-field.xMin, Math.max(0.66, ...result.obstacles.map(o => Math.abs(o.xM) + 0.12)));
+  const corner = field.corner;
+  const farthest = Math.max(field.lookAheadM, corner?.forwardM ?? 0, ...result.obstacles.map(o => o.yM));
+  const stationary = result.stationaryFusion === 'aligned';
+  const mapDepth = field.height * field.resolution;
+  const depth = stationary ? mapDepth : Math.min(mapDepth, farthest + 0.25);
+  const halfWidth = stationary ? -field.xMin
+    : Math.min(-field.xMin, Math.max(0.66, corner?.rightM ?? 0, ...result.obstacles.map(o => Math.abs(o.xM) + 0.12)));
   const scale = Math.min((w - 74) / (2 * halfWidth), (h - 90) / depth);
   if (scale <= 0) return;
   const side = Math.min(-field.xMin, (w - 74) / (2 * scale));
-  const x = (m: number) => w / 2 + m * scale, y = (m: number) => h - 54 - m * scale;
+  const baseY = corner ? (h + depth * scale) / 2 - 5 : h - 54;
+  const x = (m: number) => w / 2 + m * scale, y = (m: number) => baseY - m * scale;
   const cell = field.resolution * scale;
   const left = x(-side), right = x(side), top = y(depth), bottom = y(0);
   ctx.save();
@@ -66,10 +73,22 @@ function draw() {
   ctx.stroke();
   if (props.corridor) {
     const half = field.corridorHalfWidthM;
+    ctx.beginPath();
+    if (corner) {
+      ctx.moveTo(x(-half), bottom);
+      ctx.lineTo(x(half), bottom);
+      ctx.lineTo(x(half), y(corner.forwardM - half));
+      ctx.lineTo(x(corner.rightM), y(corner.forwardM - half));
+      ctx.lineTo(x(corner.rightM), y(corner.forwardM + half));
+      ctx.lineTo(x(-half), y(corner.forwardM + half));
+      ctx.closePath();
+    } else {
+      ctx.rect(x(-half), y(field.lookAheadM), half * 2 * scale, field.lookAheadM * scale);
+    }
     ctx.fillStyle = '#10999c0a';
-    ctx.fillRect(x(-half), y(field.lookAheadM), half * 2 * scale, field.lookAheadM * scale);
+    ctx.fill();
     ctx.setLineDash([6, 5]); ctx.strokeStyle = '#348e98'; ctx.lineWidth = 1.4;
-    ctx.strokeRect(x(-half), y(field.lookAheadM), half * 2 * scale, field.lookAheadM * scale);
+    ctx.stroke();
     ctx.setLineDash([]);
   }
   ctx.restore();
@@ -99,7 +118,18 @@ function draw() {
     ctx.fillStyle = '#ffffffdd'; ctx.strokeStyle = mark.color; ctx.lineWidth = 1.6;
     ctx.beginPath(); ctx.arc(mx, my, 8, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.arc(mx, my, 3.5, 0, 2 * Math.PI); ctx.fillStyle = mark.color; ctx.fill();
-    if (result.obstacles.length === 1) {
+    const velocity = o.velocity;
+    if (velocity && Math.hypot(velocity.xMps, velocity.yMps) > 0.005) {
+      ctx.save();
+      ctx.translate(mx, my);
+      ctx.rotate(Math.atan2(-velocity.yMps, velocity.xMps));
+      ctx.beginPath();
+      ctx.moveTo(10, 0); ctx.lineTo(25, 0);
+      ctx.moveTo(20, -4); ctx.lineTo(25, 0); ctx.lineTo(20, 4);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (corner || result.obstacles.length === 1) {
       ctx.font = '600 12px "Microsoft YaHei", sans-serif';
       const label = mark.label + ' · ' + o.yM.toFixed(2) + ' m';
       const width = ctx.measureText(label).width + 14;
@@ -122,7 +152,7 @@ onUnmounted(() => observer?.disconnect());
 <template>
   <div class="scene-viewport vehicle-plot">
     <canvas ref="canvas" aria-label="车身坐标下的风险热图与融合障碍位置" />
-    <p v-if="!result?.field" class="plot-empty">等待有效位姿和雷达观测</p>
+    <p v-if="!result?.field" class="plot-empty">{{ emptyText ?? '等待有效位姿和雷达观测' }}</p>
   </div>
 </template>
 

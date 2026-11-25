@@ -3,9 +3,9 @@ import { normalizeBox, position, sampleField } from '../../core/RealDataAdapter'
 import type { Frame, ScalarField, Target } from '../types';
 
 /** Adapt one vehicle evaluation for the existing cockpit inspectors and scenes. */
-export function vehicleScene(result: VehicleResult | null, demo: boolean, origin: string, preview?: VehicleResult['capture']): Frame {
+export function vehicleScene(result: VehicleResult | null, origin: string, retainedCapture?: VehicleResult['capture']): Frame {
   const timestamp = result?.evaluatedAtMs ?? 0, grid = result?.field;
-  const capture = preview ?? (demo ? undefined : result?.capture), image = capture?.vision;
+  const capture = result?.capture?.vision ? result.capture : retainedCapture ?? result?.capture, image = capture?.vision;
   const field: ScalarField | undefined = grid ? {
     width:grid.width, height:grid.height, values:Float32Array.from(grid.values), valid:new Uint8Array(grid.values.length).fill(1),
     xAxis:Array.from({length:grid.width}, (_,i)=>grid.xMin+(i+.5)*grid.resolution),
@@ -37,7 +37,6 @@ export function vehicleScene(result: VehicleResult | null, demo: boolean, origin
     let t=byCamera.get(i);
     if(!t){t={id:groundId(i),vehicleSource:'camera',observationTimestamp:cam!.capturedAtMs};targets.push(t);byCamera.set(i,t);}
     t.groundObservation=point;
-    if(demo)t.kind='person';
   });
   scan.forEach((p,i)=>{
     let t=byLidar.get(i);
@@ -46,7 +45,7 @@ export function vehicleScene(result: VehicleResult | null, demo: boolean, origin
   });
   const capturedAt=image ? Date.parse(image.captured_utc) : 0;
   if(image) {
-    const synchronized=!preview && cam?.sequence===image.sequence && cam.capturedAtMs===capturedAt;
+    const synchronized=cam?.sequence===image.sequence && cam.capturedAtMs===capturedAt;
     const groundTracks=new Map(synchronized ? ground.flatMap((p,i)=>p.trackId ? [[p.trackId,byCamera.get(i)!] as const] : []) : []);
     image.detections.forEach((d,i)=>{
       const bbox=normalizeBox([d.x,d.y,d.width,d.height],image.width,image.height);
@@ -61,7 +60,7 @@ export function vehicleScene(result: VehicleResult | null, demo: boolean, origin
   return {
     source:'vehicle', timestamp, targets, northCalibrated:false, radarRange:2**Math.ceil(Math.log2(maxRange)), riskField:field,
     bounds:grid ? {xMin:grid.xMin,xMax:grid.xMin+grid.width*grid.resolution,yMin:grid.yMin,yMax:grid.yMin+grid.height*grid.resolution}:undefined,
-    vehicle:{demo,action:result?.motion.action??'',cameraMessage:preview ? (image ? '实拍预览，未参与融合' : '固定摄像头未连接') : demo?'此段离线演示没有配套录像':capture?.status.message??'等待固定摄像头接入'},
+    vehicle:{cameraMessage:capture?.status.message??'等待固定摄像头接入'},
     cameraFrame:image ? {sequence:image.sequence,width:image.width,height:image.height,timestamp:capturedAt,
       imageUrl:new URL(image.imageUrl+'?at='+capturedAt,origin).href}:undefined,
   };

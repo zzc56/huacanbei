@@ -177,7 +177,7 @@ onUnmounted(() => window.removeEventListener('resize', resize));
                   </div>
                   <div class="sensor-details">
                     <span
-                      >观测源<b>{{ vehicleView ? (store.videoSource.type!=='mock'?'外部预览':store.frame.cameraFrame?'固定摄像头实拍':store.frame.vehicle?.demo?'离线坐标':'等待实拍画面') : store.frame.live ? '网络摄像头 · '+(store.frame.live.camera.state==='streaming'?'实时':'待连接') : store.frame.source==='recording' ? '实测录像' : store.videoSource.type.toUpperCase() }}</b></span
+                      >观测源<b>{{ vehicleView ? (store.videoSource.type!=='mock'?'外部预览':store.frame.cameraFrame?'固定摄像头实拍':'等待实拍画面') : store.frame.live ? '网络摄像头 · '+(store.frame.live.camera.state==='streaming'?'实时':'待连接') : store.frame.source==='recording' ? '实测录像' : store.videoSource.type.toUpperCase() }}</b></span
                         ><span
                       >{{ store.frame.source==='recording' ? '原始检测记录' : '融合目标' }}<b>{{
                         store.frame.recordingCounts?.detections ?? store.frame.targets.filter((t) => vehicleView ? t.vehicleSource==='both' : t.camera && t.radar).length

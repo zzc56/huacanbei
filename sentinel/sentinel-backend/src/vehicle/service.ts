@@ -1,8 +1,35 @@
+import { randomUUID } from 'node:crypto';
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import { Ajv } from 'ajv';
 import { evaluateVehicleRisk, vehicleLimits, type VehicleFrame } from './risk.js';
-import { buildVehicleDemo } from './demo.js';
 import type { CameraFrameStore } from '../live/camera.js';
+import type { StationaryFusionState, StationaryPose, StockLidarSample } from './contracts.js';
+import { prepareCalibration, projectedCameraPreview, type CalibrationSettings, type LiveCalibration } from './ground-calibration.js';
+
+interface CalibrationEditor {
+  origins: ReadonlySet<string>;
+  persist(settings: CalibrationSettings): void;
+}
+
+interface VehicleRiskOptions {
+  editor?: CalibrationEditor;
+  readStationaryRadar?(stationaryId: string): {sinceMs:number; scans:readonly StockLidarSample[]} | null;
+}
+
+export function saveCameraCalibration(path: string, calibration: CalibrationSettings) {
+  const config = JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
+  if (!config?.camera || typeof config.camera !== 'object' || Array.isArray(config.camera))
+    throw new Error('Missing camera configuration');
+  config.camera.groundCalibration = calibration;
+  const temporaryPath = path + '.' + randomUUID() + '.tmp';
+  try {
+    writeFileSync(temporaryPath, JSON.stringify(config, null, 2) + '\n', {flag:'wx', mode:0o600});
+    renameSync(temporaryPath, path);
+  } finally {
+    rmSync(temporaryPath, {force:true});
+  }
+}
 
 const time = { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER };
 const coordinate = { type: 'number', minimum: -1000, maximum: 1000 };
@@ -28,27 +55,98 @@ function sensorSchema(items: typeof point | typeof scanPoint, maxItems: number, 
   }, { type: 'null' }] };
 }
 
-export function registerVehicleRisk(app: FastifyInstance, camera?: CameraFrameStore): void {
+export function registerVehicleRisk(app: FastifyInstance, camera?: CameraFrameStore,
+                                    calibrationSettings = process.env['CAMERA_GROUND_CALIBRATION'],
+                                    {editor, readStationaryRadar}: VehicleRiskOptions = {}): void {
   let latest: VehicleFrame | null = null;
-  let demo: ReturnType<typeof buildVehicleDemo> | undefined;
+  let calibration: LiveCalibration | undefined;
+  if (camera && calibrationSettings) {
+    try { calibration = prepareCalibration(JSON.parse(calibrationSettings)); }
+    catch { app.log.warn('Invalid local camera ground calibration'); }
+  }
   function current(now: number) {
     const result = evaluateVehicleRisk(latest, now);
-    if (camera) result.capture = camera.snapshot(now);
+    if (camera) {
+      result.capture = camera.snapshot(now);
+      result.observations.camera ??= projectedCameraPreview(result.capture, calibration, now, vehicleLimits.maxAgeMs);
+    }
     return result;
   }
   app.get('/api/vehicle/frame', async (_request, reply) => {
     reply.header('Cache-Control', 'no-store');
     return current(Date.now());
   });
-  app.get<{ Params: { step: string } }>('/api/vehicle/demo/:step', async (request, reply) => {
-    demo ??= buildVehicleDemo();
-    const step = Number(request.params.step);
-    const frame = demo.frames[step];
-    if (!/^\d+$/.test(request.params.step) || !frame) return reply.code(400).send({ error: '无效的演示帧' });
-    return { ...evaluateVehicleRisk(frame, frame.pose.capturedAtMs), step, stages: demo.stages,
-      lastStep: demo.frames.length - 1, tickMs: demo.tickMs };
-  });
   app.get('/api/vehicle/config', async () => vehicleLimits);
+  if (camera && readStationaryRadar) {
+    app.get<{ Querystring: StationaryPose }>('/api/vehicle/stationary-fusion', {
+      schema:{querystring:{
+        type:'object', required:['xM','yM','headingDeg','stationaryId'], additionalProperties:false,
+        properties:{...point.properties, headingDeg:angle, stationaryId:{type:'string', minLength:36, maxLength:36}},
+      }},
+    }, (request, reply) => {
+      reply.header('Cache-Control', 'no-store');
+      const {xM, yM, headingDeg, stationaryId} = request.query;
+      const telemetry = readStationaryRadar(stationaryId), now = Date.now();
+      const capture = camera.snapshot(now);
+      const projected = projectedCameraPreview(capture, calibration, now, vehicleLimits.maxAgeMs);
+      const cutoff = Math.max(telemetry?.sinceMs ?? now, now - vehicleLimits.maxAgeMs);
+      const scans = telemetry?.scans
+        .filter(scan=>scan.receivedAtMs >= cutoff && scan.receivedAtMs <= now)
+        .map(scan=>({capturedAtMs:scan.receivedAtMs, observations:scan.nearest ? [scan.nearest] : []})) ?? [];
+      const sameResolution = calibration && capture.vision?.width === calibration.settings.width &&
+        capture.vision.height === calibration.settings.height;
+      const projections = sameResolution && capture.status.detector !== '未启用'
+        ? camera.snapshotsSince(cutoff, now).flatMap(frame=>{
+            const sample = frame.vision?.sequence === capture.vision?.sequence
+              ? projected : projectedCameraPreview(frame, calibration, now, vehicleLimits.maxAgeMs);
+            return sample ? [{frame,sample}] : [];
+          })
+        : [];
+      const preview = projections[0];
+      for (const {sample} of projections) {
+        const lidar = scans.find(scan=>Math.abs(scan.capturedAtMs - sample.capturedAtMs) <= vehicleLimits.maxSkewMs);
+        if (!lidar) continue;
+        const pose = {xM,yM,headingDeg,speedMps:0,capturedAtMs:lidar.capturedAtMs};
+        return {...evaluateVehicleRisk({pose,camera:sample,lidar}, now), capture:preview?.frame ?? capture, stationaryFusion:'aligned'};
+      }
+      const stationaryFusion: StationaryFusionState = !telemetry ? 'waiting_for_pose' : !scans.length ? 'waiting_for_radar' :
+        !preview ? 'waiting_for_camera' : 'waiting_for_sync';
+      const result = evaluateVehicleRisk(null, now);
+      result.observations.camera = preview?.sample ?? projected;
+      result.observations.lidar = scans[0] ? {...scans[0],includedInFusion:false} : null;
+      return {...result,capture:preview?.frame ?? capture,stationaryFusion};
+    });
+  }
+  if (camera && editor) {
+    app.post<{ Body: Partial<CalibrationSettings> }>('/api/vehicle/calibration', {bodyLimit:4096}, (request, reply) => {
+      const origin = request.headers.origin;
+      const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.ip);
+      if (!local || !origin || !editor.origins.has(origin))
+        return reply.code(403).send({error:'请从本机车路协同网页保存标定。'});
+      const vision = camera.snapshot().vision;
+      if (!vision) return reply.code(409).send({error:'监控画面已断开，请接通后重新取帧。'});
+      const {width, height, points} = request.body ?? {};
+      if (width !== vision.width || height !== vision.height)
+        return reply.code(409).send({error:'监控画面尺寸已变化，请重新取帧。'});
+      let updated: LiveCalibration;
+      try {
+        updated = prepareCalibration({
+          width, height, points,
+          cameraOffsetMs:calibration?.settings.cameraOffsetMs ?? 0,
+          alignmentWindowMs:calibration?.settings.alignmentWindowMs ?? vehicleLimits.maxSkewMs,
+        });
+      } catch (error) {
+        return reply.code(400).send({error:error instanceof Error ? error.message : '地面标定参数无效。'});
+      }
+      try { editor.persist(updated.settings); }
+      catch {
+        app.log.error('Failed to save local camera calibration');
+        return reply.code(500).send({error:'保存失败，请检查车路协同后端是否通过启动脚本运行，以及本机设备配置是否可写。'});
+      }
+      calibration = updated;
+      return {saved:true};
+    });
+  }
   app.post<{ Body: VehicleFrame }>('/api/vehicle/risk', {
     bodyLimit: 32768,
     validatorCompiler: ({ schema }) => bodyValidator.compile(schema),

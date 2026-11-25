@@ -2,19 +2,13 @@ import { computed, onScopeDispose, ref, shallowRef, watch, type Ref } from 'vue'
 import type { DriveDirection, DriveSnapshot } from '../../../../sentinel-backend/src/vehicle/contracts';
 
 const forwardKeys = ['KeyW', 'ArrowUp'];
-const reverseKeys = ['KeyS', 'ArrowDown'];
-const directions = [...forwardKeys, ...reverseKeys];
 
-export function useVehicleDrive(active: Ref<boolean>, endpoint: URL) {
+export function useVehicleDrive(active: Ref<boolean>, endpoint: URL, keyboardBlocked?: Ref<boolean>) {
   const snapshot = shallowRef<DriveSnapshot | null>(null);
   const held = ref(new Set<string>());
   const locked = ref(false), online = ref(false), expanded = ref(false);
-  const has = (keys: string[]) => keys.some(k => held.value.has(k));
-  const direction = computed<DriveDirection>(() => {
-    const forward = has(forwardKeys), reverse = has(reverseKeys);
-    if (locked.value || forward === reverse) return 'stop';
-    return forward ? 'forward' : 'reverse';
-  });
+  const forwardHeld = () => forwardKeys.some(key => held.value.has(key));
+  const direction = computed<DriveDirection>(() => !locked.value && forwardHeld() ? 'forward' : 'stop');
   let socket: WebSocket | undefined;
   function send(action: string) {
     if (socket?.readyState === WebSocket.OPEN) socket.send(action);
@@ -24,21 +18,26 @@ export function useVehicleDrive(active: Ref<boolean>, endpoint: URL) {
     locked.value = false;
     send('stop');
   }
-  function reset() { stop(); send('reset'); }
+  function setTelemetry(enabled: boolean) { stop(); send(enabled ? 'telemetry:open' : 'telemetry:close'); }
+  function setRadarTrial(enabled: boolean) { stop(); send(enabled ? 'bench:radar' : 'bench:end'); }
   function enlarge() { stop(); expanded.value = !expanded.value; }
   function key(event: KeyboardEvent) {
+    if (keyboardBlocked?.value) return;
     if (event.code === 'Escape' && expanded.value) { enlarge(); return; }
-    if (!directions.includes(event.code) && event.code !== 'Space') return;
+    if (!forwardKeys.includes(event.code) && event.code !== 'Space') return;
     const down = event.type === 'keydown';
+    const editing = event.target instanceof HTMLElement &&
+      (event.target.isContentEditable || event.target.matches('input,textarea,select'));
+    if (editing && (down || !held.value.has(event.code))) return;
     if (down && (document.hidden || !online.value || expanded.value || event.altKey || event.metaKey || event.ctrlKey ||
-      (event.target instanceof HTMLElement && (event.target.isContentEditable || event.target.matches('input,textarea,select'))))) return;
+      (event.code !== 'Space' && snapshot.value?.bench?.phase !== 'ready'))) return;
     event.preventDefault();
     if (down && event.repeat) return;
     const previous = direction.value;
     if (down) held.value.add(event.code);
     else held.value.delete(event.code);
-    if (down && event.code === 'Space') { locked.value = true; send('stop'); }
-    if (!has(directions) && !held.value.has('Space')) locked.value = false;
+    if (down && event.code === 'Space') { locked.value = true; send('stop'); return; }
+    if (!forwardHeld() && !held.value.has('Space')) locked.value = false;
     if (direction.value !== previous) send(direction.value);
   }
   function visibility() { if (document.hidden) stop(); }
@@ -56,7 +55,7 @@ export function useVehicleDrive(active: Ref<boolean>, endpoint: URL) {
         const state: DriveSnapshot = JSON.parse(event.data);
         lastFrame = performance.now();
         online.value = true;
-        if (state.timedOut && direction.value !== 'stop') stop();
+        if (state.bench?.phase !== 'ready' && forwardHeld()) stop();
         snapshot.value = state;
       };
       ws.onclose = () => {
@@ -90,5 +89,5 @@ export function useVehicleDrive(active: Ref<boolean>, endpoint: URL) {
     });
   }, { immediate:true, flush:'sync' });
   onScopeDispose(() => { socket?.close(); });
-  return { snapshot, held, locked, online, expanded, direction, reset, enlarge, stop };
+  return { snapshot, held, locked, expanded, direction, enlarge, stop, setTelemetry, setRadarTrial };
 }

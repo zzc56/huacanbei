@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useSceneStore } from '../stores/scene';
 import AnimatedMetric from './AnimatedMetric.vue';
 import CockpitBrand from './CockpitBrand.vue';
-const props=defineProps<{vehicle?:boolean; driving?:boolean; statusText?:string; refreshHz?:number; requestMs?:number|null}>();
+const props=defineProps<{vehicle?:boolean; driving?:boolean; radarOnly?:boolean; statusText?:string; refreshHz?:number; requestMs?:number|null}>();
 const emit=defineEmits<{toggle:[]}>();
 const store = useSceneStore(),
   now = ref(new Date()),
@@ -107,7 +107,7 @@ onUnmounted(() => {
     </div>
     <div class="global-metrics">
       <div>
-        <span>{{ vehicle?'融合目标':'在线目标' }}</span
+        <span>{{ radarOnly?'雷达目标':vehicle?'融合目标':'在线目标' }}</span
         ><strong><AnimatedMetric :value="vehicle ? (store.frame.riskField ? store.frame.targets.filter(t=>t.fusion).length : null) : store.frame.targets.length" :pad="2" /></strong>
       </div>
       <div>
@@ -124,7 +124,7 @@ onUnmounted(() => {
       <button
         class="icon-button"
         v-if="!driving" @click="togglePlayback"
-        :aria-label="store.frame.source==='live'||vehicle&&!store.frame.vehicle?.demo ? (store.playing ? '冻结实时显示' : '继续实时显示') : (store.playing ? '暂停回放' : '继续回放')"
+        :aria-label="store.frame.source==='live'||vehicle ? (store.playing ? '冻结实时显示' : '继续实时显示') : (store.playing ? '暂停回放' : '继续回放')"
         :title="store.playing ? '暂停 · Space' : '继续 · Space'"
       >
         <svg v-if="store.playing" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" /></svg

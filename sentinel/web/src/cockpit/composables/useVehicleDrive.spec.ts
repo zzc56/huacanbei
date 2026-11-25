@@ -24,8 +24,17 @@ it('stops on a hidden document, ignores a held key on return, and removes shortc
   const scope = effectScope();
   try {
     const active = ref(true);
-    scope.run(() => useVehicleDrive(active, new URL('http://localhost')));
-    stream.onmessage!({data:'{"timedOut":false}'});
+    const calibrating = ref(true);
+    scope.run(() => useVehicleDrive(active, new URL('http://localhost'), calibrating));
+    stream.onmessage!({data:'{}'});
+    key('keydown');
+    key('keyup');
+    expect(commands).toEqual([]);
+    stream.onmessage!({data:'{"bench":{"phase":"ready"}}'});
+    key('keydown');
+    key('keyup');
+    expect(commands).toEqual([]);
+    calibrating.value = false;
     key('keydown');
     doc.hidden = true;
     doc.dispatchEvent(new Event('visibilitychange'));

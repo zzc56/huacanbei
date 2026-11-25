@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 export interface CameraOptions { url?: string; python?: string; modelPath?: string }
 interface Detection { x:number; y:number; width:number; height:number; score:number; label:string; track_id:string }
 interface CameraFrame { sequence:number; capturedAt:number; width:number; height:number; detections:Detection[]; detector:string; jpeg:Buffer; timing:Record<string,number> }
+const defaultDetectionLabels = ['person','bicycle','car','motorcycle','bus','truck'];
 
 /** A bounded cache keeps the image and detections from a sequence together. */
 export class CameraFrameStore {
@@ -13,6 +14,7 @@ export class CameraFrameStore {
   private state = 'not-connected';
   private message = '等待外接网络摄像头连接与 RTSP 地址';
   private listeners = new Set<() => void>();
+  protected detectionLabels: ReadonlySet<string> | undefined;
   onFrame(listener:()=>void) { this.listeners.add(listener); return ()=>{this.listeners.delete(listener);}; }
   status(state:string,message:string) { this.state=state; this.message=message; }
   clear(state:string,message:string) { this.latest=undefined; this.frames.clear(); this.status(state,message); }
@@ -52,12 +54,24 @@ export class CameraFrameStore {
     return capturedAt === undefined || frame?.capturedAt === capturedAt ? frame?.jpeg : undefined;
   }
   snapshot(now=Date.now()) {
-    const f=this.latest, fresh=!!f&&now-f.capturedAt<=1500;
+    return this.snapshotFrame(this.latest,now);
+  }
+  snapshotsSince(capturedAt:number,now:number) {
+    if(this.state!=='streaming')return [];
+    return [...this.frames.values()].reverse()
+      .filter(frame=>frame.capturedAt>=capturedAt&&frame.capturedAt<=now)
+      .map(frame=>this.snapshotFrame(frame,now));
+  }
+  private snapshotFrame(f:CameraFrame|undefined,now:number) {
+    const fresh=!!f&&now-f.capturedAt<=1500;
+    const detections=f?.detections.filter(box=>!this.detectionLabels||this.detectionLabels.has(box.label))??[];
     return {
       vision:fresh?{sequence:f.sequence,captured_utc:new Date(f.capturedAt).toISOString(),width:f.width,height:f.height,
-        detections:f.detections,imageUrl:`/api/live/camera/${f.sequence}.jpg`}:null,
+        detections,imageUrl:`/api/live/camera/${f.sequence}.jpg`}:null,
       status:{state:this.state==='streaming'&&!fresh?'stale':this.state,
-        message:this.state==='streaming'&&!fresh?'摄像头数据超时，等待重新连接':this.message,
+        message:this.state==='streaming'
+          ? (fresh ? `${f.width} × ${f.height} · ${f.detector} · ${detections.length} 个检测目标` : '摄像头数据超时，等待重新连接')
+          : this.message,
         ageMs:f?now-f.capturedAt:null,sequence:f?.sequence??0,detector:f?.detector??'未启用',timing:f?.timing??{}},
     };
   }
@@ -76,10 +90,33 @@ export class LiveCamera extends CameraFrameStore {
   private child:ChildProcessWithoutNullStreams|undefined;
   private retry:ReturnType<typeof setTimeout>|undefined;
   private disposed=false;
+  private availableLabels: string[] = [];
   constructor(private options:CameraOptions={}) {
     super();
+    this.detectionLabels = new Set(defaultDetectionLabels);
     const url=options.url??process.env['CAMERA_RTSP_URL'];
     if(url || /^\d+$/.test(process.env['CAMERA_DEVICE_INDEX']??''))this.start(url??'');
+  }
+  detectionSettings() {
+    return {available:this.availableLabels,selected:[...(this.detectionLabels??[])]};
+  }
+  selectDetectionLabels(labels: unknown) {
+    if (!Array.isArray(labels) || labels.length > this.availableLabels.length ||
+        !labels.every(label=>typeof label==='string' && this.availableLabels.includes(label))) return false;
+    this.detectionLabels = new Set(labels);
+    return true;
+  }
+  private updateDetectionCatalog(labels: unknown) {
+    if (!Array.isArray(labels) || !labels.length) return;
+    const available = [...new Set(labels.filter((label):label is string=>typeof label==='string'&&label.length>0)
+      .map(label=>label.slice(0,32)))];
+    if (!available.length) return;
+    const identical = available.length === this.availableLabels.length && available.every(label=>this.availableLabels.includes(label));
+    if (!identical) {
+      const defaults = available.filter(label=>defaultDetectionLabels.includes(label));
+      this.detectionLabels = new Set(defaults.length ? defaults : available);
+    }
+    this.availableLabels = available;
   }
   private start(url:string) {
     if(this.disposed)return;
@@ -98,6 +135,7 @@ export class LiveCamera extends CameraFrameStore {
         try{
           const value=JSON.parse(line) as Record<string,unknown>;
           if(value['type']==='camera_frame')this.accept(value);
+          else if(value['type']==='camera_classes')this.updateDetectionCatalog(value['labels']);
           else if(value['type']==='camera_status'&&typeof value['state']==='string'&&typeof value['message']==='string')
             this.status(value['state'],value['message']);
         }catch{/* Non-JSON dependency notices never break the data stream. */}
@@ -113,4 +151,19 @@ export class LiveCamera extends CameraFrameStore {
     });
   }
   close(){this.disposed=true;clearTimeout(this.retry);this.child?.kill();}
+}
+
+export function registerCameraDetectionSettings(app: FastifyInstance, camera: LiveCamera, origins: ReadonlySet<string>) {
+  app.get('/api/vehicle/camera-classes', (_request, reply) => {
+    reply.header('Cache-Control','no-store');
+    return camera.detectionSettings();
+  });
+  app.post<{Body:{selected?:unknown}}>('/api/vehicle/camera-classes', {bodyLimit:65536}, (request,reply)=>{
+    const origin=request.headers.origin;
+    const loopback=['127.0.0.1','::1','::ffff:127.0.0.1'].includes(request.ip);
+    if (!origin || !loopback || !origins.has(origin)) return reply.code(403).send({error:'请在本机网页选择检测类别。'});
+    if (!camera.detectionSettings().available.length) return reply.code(409).send({error:'检测模型还未就绪。'});
+    if (!camera.selectDetectionLabels(request.body?.selected)) return reply.code(400).send({error:'请选择当前检测模型支持的类别。'});
+    return camera.detectionSettings();
+  });
 }

@@ -19,18 +19,24 @@ function observation(): VehicleResult {
   };
 }
 describe('vehicle cockpit',()=>{
+  it('retains the exact camera frame during a vehicle update with missing data',()=>{
+    const previous=observation().capture;
+    const waiting=vehicleScene(null,origin,previous);
+    expect(waiting.cameraFrame?.sequence).toBe(3);
+    expect(waiting.targets[0]?.camera?.sequence).toBe(3);
+    expect(waiting.riskField).toBeUndefined();
+  });
   it('links a calibrated target to the exact same image, track, radar return and field location',()=>{
     const data=observation();
-    const scene=vehicleScene(data,false,origin);
+    const scene=vehicleScene(data,origin);
     expect(scene.targets).toHaveLength(1);
     expect(scene.targets[0]).toMatchObject({vehicleSource:'both',radar:{range:.5},fusion:{y:.5},camera:{class:'person',confidence:.95}});
     expect(scene.cameraFrame?.imageUrl).toBe(origin+'/api/live/camera/3.jpg?at=5000');
     data.observations.camera!.sequence=4;
-    expect(vehicleScene(data,false,origin).targets).toHaveLength(2);
+    expect(vehicleScene(data,origin).targets).toHaveLength(2);
     data.observations.camera!.sequence=3;
     data.observations.camera!.capturedAtMs--;
-    expect(vehicleScene(data,false,origin).targets[0].camera).toBeUndefined();
-    expect(vehicleScene(data,true,origin).cameraFrame).toBeUndefined();
+    expect(vehicleScene(data,origin).targets[0].camera).toBeUndefined();
   });
   it('gives common low-speed field strengths distinguishable colors on a fixed scale',()=>{
     function color(v:number) {const p=new Uint8ClampedArray(4);paintFieldCell(p,0,v,true);return [...p];}
@@ -39,9 +45,10 @@ describe('vehicle cockpit',()=>{
     expect(color(1)[0]).toBeGreaterThan(color(1)[1]+100);
     expect(color(.3)[3]).toBe(255);
   });
-  it('keeps live preview boxes separate from simulated observations even when identifiers coincide',()=>{
+  it('keeps live boxes separate from older ground observations even when identifiers coincide',()=>{
     const data=observation();
-    const scene=vehicleScene(data,true,origin,data.capture);
+    data.observations.camera!.sequence=2;
+    const scene=vehicleScene(data,origin);
     expect(scene.cameraFrame?.sequence).toBe(3);
     expect(scene.targets.filter(t=>t.fusion)).toHaveLength(1);
     expect(scene.targets.find(t=>t.fusion)?.camera).toBeUndefined();

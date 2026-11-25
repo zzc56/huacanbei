@@ -31,7 +31,7 @@ export interface Frame {
   timestamp: number;
   targets: Target[];
   source?: 'recording' | 'live' | 'backend' | 'mock' | 'vehicle';
-  vehicle?: { demo:boolean; cameraMessage:string; action:string };
+  vehicle?: { cameraMessage:string };
   live?: {
     startedAt: number;
     radar: { state: string; endpoint: string; bytes: number; cycles: number; completeCycles: number;
