@@ -8,6 +8,8 @@ export type RadarCandidate = {
 /** 局部 XY，角度相对 +Y 顺时针；只有 northCalibrated 为 true 时 +Y 代表正北。 */
 export interface Target {
   id: string;
+  vehicleSource?: 'camera' | 'lidar' | 'both';
+  groundObservation?: { xM:number; yM:number };
   kind?: string;
   measurementSource?: 'radar' | 'recorded-vision' | 'vision-only';
   radarCandidates?: RadarCandidate[];
@@ -29,7 +31,7 @@ export interface Target {
     distanceM: number; timeDeltaMs: number; radarAgeMs: number;
   };
   radar?: { range: number; azimuth: number; radialVelocity: number | null; rcs?: number; sequence?: number; trackStart?: number };
-  camera?: { bbox: [number, number, number, number]; class: string; confidence: number; sequence?: number; detectionIndex?: number; trackId?:string };
+  camera?: { bbox: [number, number, number, number]; class: string; confidence: number; sequence?: number; detectionIndex?: number; trackId?:string; previewOnly?:boolean };
   fusion?: {
     x: number;
     y: number;
@@ -49,7 +51,8 @@ export interface Target {
 export interface Frame {
   timestamp: number;
   targets: Target[];
-  source?: 'recording' | 'live' | 'backend' | 'mock';
+  source?: 'recording' | 'live' | 'backend' | 'mock' | 'vehicle';
+  vehicle?: { cameraMessage:string };
   live?: {
     startedAt: number;
     radar: { state: string; endpoint: string; bytes: number; cycles: number; completeCycles: number;
@@ -91,7 +94,7 @@ export interface DataStream {
   seek?(positionMs: number): void;
 }
 export interface VideoSource {
-  type: 'mock' | 'video' | 'carla';
+  type: 'mock' | 'video' | 'carla' | 'photo';
   url?: string;
 }
 export interface Grid {

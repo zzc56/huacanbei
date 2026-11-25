@@ -29,9 +29,13 @@ npm.cmd --prefix sentinel/web run build
 
 服务启动后，可打开 [SENTINEL 首页](http://127.0.0.1:4173/)。在首页点击「登录」，可注册邮箱账号或重置密码。发信配置见[后端说明](sentinel/sentinel-backend/README.md#邮箱注册与密码重置)。需要让不同电脑使用同一个账号库和发信邮箱时，将下载版指向同一个 HTTPS 账号服务，见[共用发信邮箱](sentinel/sentinel-backend/README.md#共用发信邮箱)。
 
+在实时连接或历史回放的任意监控视图中，点击页头 SENTINEL 标志右侧的「切换实体小车」进入小车控制页。[实车接入说明](docs/vehicle-integration.md)
+
 ### 实时设备
 
-将 `sentinel/config/devices.example.json` 复制为 `sentinel/config/devices.json`，填写 TCR300 的地址、端口和电脑侧网卡地址。模板默认关闭摄像头。启用摄像头时，需要 Python 3.10 或 3.11、与设备匹配的 PyTorch 和 `sentinel/requirements-camera.txt` 中的依赖。将原参赛包的 `yolov8n.pt` 放入 `sentinel/models/`，或在本机配置中指定模型路径。模型及检测库的许可文本见 [Ultralytics AGPL-3.0](sentinel/licenses/ultralytics-AGPL-3.0.txt)。
+将 `sentinel/config/devices.example.json` 复制为 `sentinel/config/devices.json`，填写 TCR300 的地址、端口和电脑侧网卡地址。模板默认关闭摄像头。启用摄像头时，需要 Python 3.10 或 3.11、与设备匹配的 PyTorch 和 `sentinel/requirements-camera.txt` 中的依赖。通用检测优先沿用本机配置的模型，缺少通用权重时可使用仓库自带的 YOLOv8n ONNX。模型及检测库的许可文本见 [Ultralytics AGPL-3.0](sentinel/licenses/ultralytics-AGPL-3.0.txt)。
+
+仓库另带篮球专用 ONNX，安装摄像头依赖后会自动加载。使用车路协同启动脚本时，摄像头默认显示「人和球」，也可选择「球类」。模型来源为 [Ultralytics YOLOv8](https://docs.ultralytics.com/models/yolov8/) 和 [Swish-Vision](https://github.com/ahmedsilat44/Swish-Vision/blob/HEAD/models/best.pt) 的 ONNX 导出。
 
 ```powershell
 node sentinel/launch.mjs --check
@@ -47,7 +51,7 @@ node sentinel/launch.mjs live
 
 在「历史回放」点击「导入回放」，可选择 Sentinel 导出的 ZIP，或同一次采集的录像和配套数据。「回放库」可以保存当前回放、挑选已保存的录制并导出 ZIP，包内含可单独查看的目标数据 CSV。账号与回放库分别保存在本机 SQLite 数据库。
 
-使用原始长录制接口时，在 `sentinel/数据保存/` 和 `sentinel/sentinel-backend/media/` 恢复原参赛包的数据，再单独启动 `SOURCE_MODE=recording` 的后端。摄像头模型权重和本机配置保存在原参赛包或本机。
+使用原始长录制接口时，在 `sentinel/数据保存/` 和 `sentinel/sentinel-backend/media/` 恢复原参赛包的数据，再单独启动 `SOURCE_MODE=recording` 的后端。本机设备配置依然保存在本机。
 
 ## 验证
 

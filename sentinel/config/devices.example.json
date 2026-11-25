@@ -6,10 +6,13 @@
   },
   "camera": {
     "enabled": false,
+    "deviceIndex": null,
     "rtspUrl": "rtsp://192.0.2.30/",
     "localAddress": "192.0.2.20",
     "pythonPath": "",
     "modelPath": "models/yolov8n.pt",
-    "fps": 10
+    "basketballOnnxPath": "",
+    "fps": 10,
+    "groundCalibration": null
   }
 }

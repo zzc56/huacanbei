@@ -472,7 +472,8 @@ export function cameraTargets(
       c.font = `400 ${size}px "Segoe UI", sans-serif`;
       c.textAlign = 'left';
       c.fillStyle = c.strokeStyle;
-      const label = `${targetDisplayName(t, { showVisualNumber: false })} ${Math.round(t.camera.confidence * 100)}%`;
+      const name = targetDisplayName(t, { showVisualNumber: false });
+      const label = t.camera.previewOnly ? `${name} · 预览` : `${name} ${Math.round(t.camera.confidence * 100)}%`;
       const labelX = Math.max(0, Math.min(w - c.measureText(label).width, x));
       c.fillText(label, labelX, Math.max(size, y - 4));
       c.restore();
@@ -514,8 +515,9 @@ export function mapTargets(
   for (const t of [...targets].sort(
     (a, b) => Number(a.id === selectedId) - Number(b.id === selectedId),
   )) {
-    if (!t.fusion || (mode === 'radar' && !t.radar)) continue;
+    if (mode === 'radar' && !t.radar) continue;
     const polar = mode==='radar' && t.radar ? {x:t.radar.range*Math.sin(t.radar.azimuth*Math.PI/180),y:t.radar.range*Math.cos(t.radar.azimuth*Math.PI/180)} : t.fusion;
+    if (!polar) continue;
     const [x, y] = map(polar.x, polar.y),
       color = riskTone(t),
       selected = t.id === selectedId;

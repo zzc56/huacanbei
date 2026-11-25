@@ -15,6 +15,15 @@ const riskTitle = computed(() => {
   return '综合风险值';
 });
 const displayedPosition = computed(() => store.selectedMeasurement?.fusion);
+const positionLabel = computed(() => {
+  const ground = store.selected?.groundObservation;
+  if (displayedPosition.value) {
+    const { x, y } = displayedPosition.value;
+    const digits = store.frame.vehicle ? 2 : 1;
+    return x.toFixed(digits) + ', ' + y.toFixed(digits);
+  }
+  return ground ? ground.xM.toFixed(2) + ', ' + ground.yM.toFixed(2) : '';
+});
 const displayedDistance = computed(() => store.selectedMeasurement?.radar?.range ??
   (displayedPosition.value ? Math.hypot(displayedPosition.value.x, displayedPosition.value.y) : undefined));
 const level = computed(() => {
@@ -36,11 +45,12 @@ const typeIcon = computed(() => {
 });
 const measurement=computed(()=>measurementStatus(store.selected));
 const azimuthReference = computed(() => {
+  if (store.frame.vehicle && store.selected?.radar) return '车头 0° · 向右为正';
   if (!displayedPosition.value) return measurement.value.position;
   return store.frame.northCalibrated === true ? '正北 0° · 顺时针' : '传感器 +Y 为 0° · 顺时针';
 });
 const associations = computed(() => store.frame.targets.filter((target) =>
-  store.frame.source === 'recording' ? target.autoAssociation : target.radar && target.camera,
+  store.frame.vehicle ? target.vehicleSource === 'both' : store.frame.source === 'recording' ? target.autoAssociation : target.radar && target.camera,
 ).length);
 const associationCount = computed(() => {
   if (store.frame.source === 'live' && store.frame.live?.association?.state !== 'active') return '—';
@@ -97,23 +107,19 @@ const associationStatus = computed(() => {
         <small>{{ pairedVisualType ? `视觉 ${pairedVisualType}` : '' }}</small>
       </div>
       <div>
-        <span>坐标 (X, Y)</span
-        ><strong>{{
-          displayedPosition
-            ? displayedPosition.x.toFixed(1) + ', ' + displayedPosition.y.toFixed(1)
-            : ''
-        }}</strong>
+        <span>{{ store.frame.vehicle ? (displayedPosition ? '车身' : '场地') : '' }}坐标 (X, Y)</span
+        ><strong>{{ positionLabel }}</strong>
       </div>
       <div>
         <span>目标距离</span
         ><strong
           >{{
-            displayedDistance?.toFixed(1)
+            displayedDistance?.toFixed(store.frame.vehicle ? 2 : 1)
           }}<small v-if="displayedDistance !== undefined"> m</small></strong
         >
       </div>
       <div>
-        <span>方位角</span><strong>{{ displayedPosition ? `${displayedPosition.azimuth.toFixed(1)}°` : '' }}</strong
+        <span>方位角</span><strong>{{ (store.frame.vehicle ? store.selected?.radar?.azimuth ?? displayedPosition?.azimuth : displayedPosition?.azimuth)?.toFixed(1) ?? '—' }}°</strong
         ><small :title="store.frame.northCalibrated === false ? '原始记录未提供北向标定' : undefined">{{ azimuthReference }}</small>
       </div>
       <div>

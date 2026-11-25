@@ -16,7 +16,7 @@ export function polarToXY(range: number, azimuth: number) {
   const angle = azimuth * Math.PI / 180;
   return { x: range * Math.sin(angle), y: range * Math.cos(angle) };
 }
-function position(x: number, y: number, vx?: number, vy?: number): NonNullable<Target['fusion']> {
+export function position(x: number, y: number, vx?: number, vy?: number): NonNullable<Target['fusion']> {
   if (vx !== undefined && vy !== undefined) return solveFusion(x, y, vx, vy);
   return { x, y, azimuth: degrees(Math.atan2(x, y)), vx: null, vy: null, speed: null, heading: null, radialVelocity: null, tangentialVelocity: null };
 }
@@ -148,7 +148,7 @@ export class RealDataAdapter {
     if(!Array.isArray(r.targets)||!Number.isFinite(numeric(r.timestamp)))return;
     return this.backend(r);
   }
-  private trails(frame: FrameData) {
+  trails(frame: FrameData) {
     if (frame.timestamp < this.last) this.history.clear();
     this.last = frame.timestamp;
     for (const target of frame.targets) {
@@ -249,7 +249,8 @@ export class RealDataAdapter {
       const reportedTrack=typeof d.track_id==='string'&&/^V\d{1,12}$/.test(d.track_id)?d.track_id:undefined;
       const liveTrack=isLive?reportedTrack:undefined;
       const link=vehicleLinks.get(i)??{},camera={bbox,class:category,confidence,sequence:numeric(vision.sequence),detectionIndex:i,
-        trackId:liveTrack??(typeof link.visualTrackId==='string'?link.visualTrackId:reportedTrack)};
+        trackId:liveTrack??(typeof link.visualTrackId==='string'?link.visualTrackId:reportedTrack),
+        ...(d.previewOnly === true && {previewOnly:true})};
       const score=numeric(link.score),samples=numeric(link.samples),corr=numeric(link.correlation),distance=numeric(link.medianDistance),recordedAge=numeric(link.radarAgeMs);
       const radarTarget=targets.find(t=>t.id===link.radarId&&t.radar&&!used.has(t.id));
       const cameraTime=timestamp(vision.captured_utc),radarAge=time-(radarTarget?.observationTimestamp??-Infinity),delta=Math.abs((radarTarget?.observationTimestamp??-Infinity)-cameraTime);
