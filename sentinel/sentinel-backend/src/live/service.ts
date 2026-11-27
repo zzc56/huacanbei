@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { WebSocket, WebSocketServer } from 'ws';
 import { Tcr300Decoder, type RadarObservation } from './tcr300.js';
-import { LiveCamera, type CameraOptions } from './camera.js';
+import { LiveCamera, registerCameraFrames, type CameraOptions } from './camera.js';
 import { LiveRiskField } from './risk.js';
 import { devicesPath, parseRadarSettings, readDeviceConfig, updateDeviceConfig } from './radar-settings.js';
 import { prepareCalibration, type LiveCalibration } from './calibration.js';
@@ -105,12 +105,11 @@ export class LiveRadar {
   close() { this.disposed = true; clearTimeout(this.retry); this.socket?.destroy(); }
 }
 
-export function registerLive(app: FastifyInstance, origins: Set<string>, options: LiveOptions) {
+export function registerLive(app: FastifyInstance, origins: Set<string>, options: LiveOptions, camera = new LiveCamera(options.camera)) {
   const devicesFile = options.devicesFile ?? process.env['SENTINEL_DEVICES_FILE'] ?? devicesPath;
   const deviceConfig = readDeviceConfig(devicesFile);
   const initialRadar = deviceConfig.radar?.host === '' ? deviceConfig.radar : parseRadarSettings(deviceConfig.radar);
   let radar = new LiveRadar({ ...initialRadar, ...options });
-  const camera = new LiveCamera(options.camera);
   let risk = new LiveRiskField();
   const matcher = new LiveVehicleMatcher();
   let savingSettings = false;
@@ -211,7 +210,8 @@ export function registerLive(app: FastifyInstance, origins: Set<string>, options
     const devicesReady = !!(calibration && !sizeMismatch && devicesOnline && capture.status.detector !== '未启用');
     // A negative offset needs later radar packets. Hold the corresponding video frame until they can arrive.
     const delayMs = devicesReady ? cameraDelay() : 0;
-    const delayed = delayMs > 0 ? camera.snapshot(frame.timestamp, delayMs).vision : newest;
+    const alignedCapture = delayMs > 0 ? camera.snapshot(frame.timestamp, delayMs) : capture;
+    const delayed = alignedCapture.vision;
     const video = delayed?.width === newest?.width && delayed?.height === newest?.height ? delayed : null;
     const active = devicesReady && !!video;
     if (!active) matcher.reset();
@@ -225,8 +225,12 @@ export function registerLive(app: FastifyInstance, origins: Set<string>, options
         : !devicesReady ? '摄像头目标检测未启用'
         : active ? '实时雷视匹配' : '正在缓存画面以对齐雷达',
     };
-    const display = video ?? newest;
-    return {...frame,snapshot,vision:display ? { ...display, alignmentDelayMs: video ? delayMs : 0, vehicleLinks } : null,context:{...frame.context,bounds:{...risk.bounds}},
+    const display = camera.displaySnapshot(video ? alignedCapture : capture, frame.timestamp, true).vision;
+    const visibleLinks = display ? vehicleLinks.flatMap(link => {
+      const detectionIndex = display.detections.findIndex(box => box.track_id === link.visualTrackId && !box.previewOnly);
+      return detectionIndex < 0 ? [] : [{...link,detectionIndex}];
+    }) : [];
+    return {...frame,snapshot,vision:display ? { ...display, alignmentDelayMs: video ? delayMs : 0, vehicleLinks:visibleLinks } : null,context:{...frame.context,bounds:{...risk.bounds}},
       live:{...frame.live,camera:capture.status,
         association,
         fusion:{state:snapshot?'radar_only':'unavailable',
@@ -238,12 +242,9 @@ export function registerLive(app: FastifyInstance, origins: Set<string>, options
   app.get('/api/health', async () => ({ source: 'live', state: packet().live.radar.state, clients: clients.size }));
   app.get('/api/live/status', async () => packet().live);
   app.get('/api/live/frame', async () => packet());
-  app.get<{Params:{sequence:string}}>('/api/live/camera/:sequence.jpg',async(request,reply)=>{
-    const jpeg=camera.image(Number(request.params.sequence));
-    if(!jpeg)return reply.code(404).send({error:'Camera frame expired or unavailable'});
-    return reply.header('Cache-Control','no-store').type('image/jpeg').send(jpeg);
-  });
+  registerCameraFrames(app, camera);
   app.server.on('upgrade', (req, socket, head) => {
+    if (req.url === '/api/vehicle/drive') return;
     if (req.url !== '/stream' || clients.size >= 32 || req.headers.origin && !origins.has(req.headers.origin)) { socket.destroy(); return; }
     server.handleUpgrade(req, socket, head, ws => server.emit('connection', ws, req));
   });

@@ -8,22 +8,29 @@ import {root,loadSettings} from './settings.mjs';
 import {authOrigin} from './web/scripts/auth-origin.mjs';
 
 const mode=process.argv[2]??'live',children=[];
-if(!['live','recording','--check'].includes(mode))throw Error('使用 live 或 recording 模式');
+if(!['live','recording','vehicle','--check'].includes(mode))throw Error('使用 live、recording 或 vehicle 模式');
 const settings=loadSettings({allowUnconfigured:true});
 for(const file of ['web/dist/index.html','sentinel-backend/dist/src/main.js','sentinel-backend/node_modules/fastify/package.json'])
   if(!existsSync(join(root,file)))throw Error(`缺少 ${file}。请先按仓库 README.md 的「安装和构建」准备项目。`);
-const modelReady=existsSync(settings.model);
+const onnxReady=!!settings.onnxModel&&existsSync(settings.onnxModel);
+const modelReady=onnxReady||existsSync(settings.model);
 if(mode==='--check'){
   console.log(JSON.stringify({root,node:process.version,pythonReady:settings.pythonReady,python:settings.python,
-    model:settings.model,modelReady,radar:settings.config.radar.host||'未配置',
-    camera:settings.config.camera.enabled?new URL(settings.config.camera.rtspUrl).hostname:'未启用',
+    model:onnxReady?settings.onnxModel:settings.model,modelReady,
+    basketballModel:settings.basketballModel||null,
+    basketballModelReady:!!settings.basketballModel&&existsSync(settings.basketballModel),
+    radar:settings.config.radar.host||'未配置',
+    camera:settings.config.camera.enabled
+      ? (Number.isInteger(settings.config.camera.deviceIndex)&&settings.config.camera.deviceIndex>=0
+          ? 'USB '+settings.config.camera.deviceIndex : new URL(settings.config.camera.rtspUrl).hostname)
+      : '未启用',
     sourceFilesReady:true},null,2));
 }else{
   const frontend='http://127.0.0.1:4173';
   const backend='http://127.0.0.1:3001';
   const workspace=createHash('sha256').update(root.toLowerCase())
     .update(authOrigin===backend?'':'\0'+authOrigin).digest('hex');
-  const page=frontend+(mode==='recording'?'/#/history':'/');
+  const page=frontend+(mode==='recording'?'/#/history':mode==='vehicle'?'/#/vehicle?view=drive':'/');
   let stopping=false;
   async function available(port){
     const server=net.createServer();
@@ -85,7 +92,10 @@ if(mode==='--check'){
         console.log('摄像头 Python 环境尚未配置。请安装摄像头依赖并在 config/devices.json 配置 camera.pythonPath。');
       if(settings.config.camera.enabled&&settings.pythonReady&&!modelReady)
         console.log('找不到检测模型，本次摄像头只提供画面：'+settings.model);
-      launch('sentinel-backend','dist/src/main.js','live-backend',settings.environment);
+      launch('sentinel-backend','dist/src/main.js','live-backend',{
+        ...settings.environment,
+        CAMERA_DISPLAY_PRESET:mode==='vehicle'?'sports':'',
+      });
       await wait(backend+'/api/health',data=>data.source==='live');
       launch('web','scripts/serve-dist.mjs','live-frontend',{
         SENTINEL_AUTH_ORIGIN:authOrigin,SENTINEL_LIVE_ORIGIN:backend,SENTINEL_WORKSPACE:workspace,

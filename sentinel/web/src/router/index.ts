@@ -15,6 +15,7 @@ const router = createRouter({
     { path: '/history', name: 'history', component: HomePage },
     { path: '/live/waiting', redirect: '/?mode=live' },
     { path: '/', name: 'home', component: HomePage },
+    { path: '/vehicle', name: 'vehicle', component: () => import('@/cockpit/VehiclePanel.vue') },
     { path: '/tech', name: 'tech', component: TechPage },
     { path: '/demo', name: 'demo', component: DemoPage },
     { path: '/data', name: 'data', component: DataPage },

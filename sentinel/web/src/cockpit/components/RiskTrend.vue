@@ -11,7 +11,7 @@ use([LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
 const props = defineProps<{ targetName: string; bundledReplay?: boolean }>();
 const store = useSceneStore(),
   element = ref<HTMLDivElement | null>(null),
-  period = ref(600);
+  period = ref(store.frame.vehicle ? 10 : 600);
 const hasSamples = ref(false);
 const recorded = computed(() => store.replayRiskHistory !== undefined);
 const selectedTrack = computed(() => store.selected?.trackInstanceId ?? store.selectedId);
@@ -47,7 +47,7 @@ const history = new Map<string, RiskTrendPoint[]>();
 function record() {
   if(store.frame.timestamp < last){history.clear();last=-Infinity;}
   if (recorded.value) return;
-  if (store.frame.timestamp - last < 1000 && store.frame.timestamp >= last) return;
+  if (store.frame.timestamp - last < (store.frame.vehicle ? 100 : 1000) && store.frame.timestamp >= last) return;
   last = store.frame.timestamp;
   for(const [id,series] of history)if(!store.knownRiskTargets.some(t=>(t.trackInstanceId ?? t.id)===id)&&series.at(-1)?.[1]!==null)series.push([last/1000,null]);
   for(const [id,series] of history) if(series.length && last/1000-series[series.length-1][0]>1800)history.delete(id);
@@ -114,6 +114,7 @@ function render() {
         fontSize: 11,
         formatter: (v: number) => {
           if (recorded.value) return `${v} s`;
+          if (period.value < 60) return Math.round(v - end) + ' s';
           const minutes = Math.round((v - end) / 60);
           return minutes === 0 ? '现在' : minutes + ' min';
         },
@@ -200,12 +201,12 @@ onUnmounted(() => {
         @click="showNative = !showNative">{{ embedded ? '录像同步版' : 'Flourish 原图' }}</button>
       <div v-if="!recorded" class="periods">
         <button
-          v-for="p in [60, 600, 1800]"
+          v-for="p in store.frame.vehicle ? [10, 60, 600] : [60, 600, 1800]"
           :key="p"
           :class="{ active: period === p }"
           @click="period = p"
         >
-          {{ p / 60 }}m
+          {{ p < 60 ? p + 's' : p / 60 + 'm' }}
         </button>
       </div>
     </div>

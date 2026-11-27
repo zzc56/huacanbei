@@ -1,0 +1,10 @@
+﻿{
+    "Success":  true,
+    "AdapterIndex":  9,
+    "AddedAddresses":  [
+                           "192.168.1.101",
+                           "192.168.10.101"
+                       ],
+    "GatewayAdded":  false,
+    "WirelessChanged":  false
+}

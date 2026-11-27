@@ -1,0 +1,52 @@
+{
+  "created_local_date": "2026-10-11",
+  "scope": "软件、配置、操作说明；不含采集数据、录像、浏览器登录状态或摄像头密码",
+  "radar": {
+    "model": "TCR300",
+    "protocol": "TCR300-Self",
+    "ip": "192.168.10.123",
+    "tcp_port": 50000,
+    "software": "2.0.7 摄像头修复版",
+    "data_save_default": false
+  },
+  "camera": {
+    "ecosystem": "睿博士/P6S",
+    "http": "http://192.168.1.11/",
+    "rtsp_port": 554,
+    "capture": "Edge网页 -> OBS窗口采集 -> OBS Virtual Camera -> 雷达左侧预览"
+  },
+  "network": {
+    "computer_ipv4": [
+      "192.168.10.100/24",
+      "192.168.1.100/24"
+    ],
+    "gateway_dns": "专用采集有线口不设置网关/DNS，WiFi可用于上网"
+  },
+  "obs": {
+    "version": "32.2.2",
+    "mode": "portable",
+    "canvas": [
+      1920,
+      1080
+    ],
+    "fps": 30,
+    "crop_reference_only": {
+      "source_client": [
+        2560,
+        1528
+      ],
+      "left": 29,
+      "right": 52,
+      "top": 226,
+      "bottom": 142
+    },
+    "crop_warning": "新电脑浏览器大小/缩放/布局不同，必须重新核对；默认使用未裁剪场景"
+  },
+  "not_verified_on_target": [
+    "目标电脑图形捕获与编码",
+    "摄像头登录",
+    "网卡设置",
+    "真实车辆目标记录",
+    "雷达视频精确时间同步"
+  ]
+}

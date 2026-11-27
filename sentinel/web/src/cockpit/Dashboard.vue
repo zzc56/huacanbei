@@ -1,23 +1,38 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { useSceneStore } from './stores/scene';
 import { useScene } from './composables/useScene';
 import StatusBar from './components/StatusBar.vue';
 import LiveControls from './components/LiveControls.vue';
+import CameraDetectionPicker from './components/CameraDetectionPicker.vue';
 import TargetInspector from './components/TargetInspector.vue';
 import SceneViewport from './components/SceneViewport.vue';
 import OverviewPanel from './components/OverviewPanel.vue';
 import ReplayImport from './components/ReplayImport.vue';
 import ReplayLibrary from './components/ReplayLibrary.vue';
 import UiIcon from './components/UiIcon.vue';
-import { targetDisplayName } from './core/targetLabels';
+import { cameraTargetIcon, targetDisplayName } from './core/targetLabels';
 import type { ViewMode } from './renderers/lightScene';
 import type { MonitorSource } from './services/stream';
 import type { ReplayRecording } from './data/bundledReplay';
 import { replayPlaybackRates } from './types';
+import type { Target } from './types';
 import './styles.css';
 import './field-console.css';
-const props = defineProps<{ source: MonitorSource; bundledReplay?: boolean }>();
+const props = withDefaults(defineProps<{ source?: MonitorSource; bundledReplay?: boolean }>(), { source:'live' });
+const route = useRoute();
+const cameraEndpoint = new URL(import.meta.env.VITE_STREAM_URL || 'http://127.0.0.1:3001', window.location.href);
+if (cameraEndpoint.protocol === 'ws:') cameraEndpoint.protocol = 'http:';
+if (cameraEndpoint.protocol === 'wss:') cameraEndpoint.protocol = 'https:';
+const vehicleRoute = computed(() => ({
+  name: 'vehicle',
+  query: {
+    view: 'drive',
+    from: props.source === 'recording' ? 'history' : 'live',
+    ...(route.query.view === 'data' ? { replay: 'data' } : {}),
+  },
+}));
 const emit = defineEmits<{ changeSource: [source: MonitorSource] }>();
 const imported = shallowRef<ReplayRecording>();
 const replayName = computed(() => {
@@ -95,6 +110,7 @@ const filters = computed(() =>
         ['car', '车辆'],
         ['truck', '货车'],
         ['person', '行人'],
+        ['sports ball', '球'],
       ]
     : [
         ['all', '全部'],
@@ -103,15 +119,19 @@ const filters = computed(() =>
         ['low', '低风险'],
       ],
 );
-watch(mode, () => {
+const presentedCameraTargets = shallowRef<Target[] | null>(null);
+const cameraTargets = computed(() => props.source === 'live'
+  ? presentedCameraTargets.value ?? [] : store.frame.targets.filter(t => t.camera || t.groundObservation));
+const cameraSelection = computed(() => cameraTargets.value.find(target => target.id === store.selectedId)?.camera);
+watch([mode, () => props.source], () => {
   filter.value = 'all';
 });
 const targets = computed(() =>
-  store.frame.targets
+  (mode.value === 'camera' ? cameraTargets.value : store.frame.targets)
     .filter((t) => {
       const v = t.risk?.value;
       if (mode.value === 'camera')
-        return !!t.camera && (filter.value === 'all' || t.camera.class === filter.value);
+        return (!!t.camera || !!t.groundObservation) && (filter.value === 'all' || (t.camera?.class ?? t.kind) === filter.value);
       if (mode.value === 'radar' && !t.radar) return false;
       if (mode.value === 'risk' && (!t.fusion || (store.usesRadarMeasurements && !t.radar))) return false;
       return (
@@ -129,7 +149,9 @@ const targets = computed(() =>
 <template>
   <main class="cockpit-viewport">
     <div class="cockpit-stage console-stage">
-      <StatusBar><LiveControls v-if="source === 'live'" /></StatusBar>
+      <StatusBar :switch-to="vehicleRoute">
+        <LiveControls v-if="source === 'live'" />
+      </StatusBar>
       <div class="monitor-toolbar">
         <div ref="tabList" class="view-tabs" role="tablist" aria-label="感知视图">
           <span v-if="highlightStyle" class="tab-highlight" :class="{ sliding: animateHighlight }"
@@ -191,7 +213,7 @@ const targets = computed(() =>
         <section class="monitor-main glass-panel">
           <OverviewPanel v-if="mode === 'overview'" :targets="renderTargets" :time="time" @open="mode = $event" />
           <div v-else class="monitor-content">
-            <SceneViewport :mode="mode" :targets="renderTargets" :time="time" />
+            <SceneViewport :mode="mode" :targets="renderTargets" :time="time" @camera-presented="presentedCameraTargets = $event" />
             <aside class="monitor-rail">
               <section class="rail-context">
                 <template v-if="mode === 'risk'"
@@ -248,11 +270,12 @@ const targets = computed(() =>
                     <h3>视觉感知</h3>
                     <UiIcon name="camera" :size="18" />
                   </div>
+                  <CameraDetectionPicker v-if="source === 'live'" :endpoint="cameraEndpoint" presets-only />
                   <div class="sensor-stat">
                     <span>当前视觉目标</span
                     ><strong
                       >{{
-                        String(store.frame.targets.filter((t) => t.camera).length).padStart(2, '0')
+                        String(cameraTargets.length).padStart(2, '0')
                       }}<small> OBJECTS</small></strong
                     >
                   </div>
@@ -266,8 +289,8 @@ const targets = computed(() =>
                       }}</b></span
                     ><span
                       >选中置信度<b>{{
-                        store.selected?.camera
-                          ? (store.selected.camera.confidence * 100).toFixed(1) + '%'
+                        cameraSelection
+                          ? cameraSelection.previewOnly ? '预览' : (cameraSelection.confidence * 100).toFixed(1) + '%'
                           : '—'
                       }}</b></span
                     >
@@ -305,17 +328,7 @@ const targets = computed(() =>
                   >
                     <span class="target-row-icon"
                       ><UiIcon
-                        :name="
-                          mode === 'camera'
-                            ? target.camera?.class === 'truck'
-                              ? 'truck'
-                              : target.camera?.class === 'person'
-                                ? 'person'
-                                : target.camera
-                                  ? 'car'
-                                  : 'radar'
-                            : 'focus'
-                        "
+                        :name="mode === 'camera' ? cameraTargetIcon(target) : 'focus'"
                         :size="24" /></span
                     ><span class="target-row-body"
                       ><b
@@ -328,7 +341,7 @@ const targets = computed(() =>
                               : '低风险'
                         }}</small></b
                       ><span
-                        ><strong>{{ mode==='camera' && target.camera ? (target.camera.confidence*100).toFixed(1)+'%' : target.risk?.value.toFixed(2) }}</strong
+                        ><strong>{{ mode==='camera' && target.camera ? target.camera.previewOnly ? '预览' : (target.camera.confidence*100).toFixed(1)+'%' : target.risk?.value.toFixed(2) }}</strong
                         ><small>{{
                           mode==='camera' ? target.camera?.class : target.autoAssociation?.status === 'matched' || target.autoAssociation?.method === 'offline-trajectory-fit' ? '雷视关联' : target.autoAssociation ? '暂定轨迹关联' : target.radar ? (target.camera ? '已融合' : '仅雷达') : '仅视觉'
                         }}</small></span

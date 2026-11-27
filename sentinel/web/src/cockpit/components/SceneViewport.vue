@@ -23,7 +23,9 @@ import {
   type PlotBounds,
 } from '../renderers/lightScene';
 import UiIcon from './UiIcon.vue';
-const props = defineProps<{ mode: ViewMode; targets: Target[]; time: number; compact?: boolean; minimap?: boolean }>();
+import { paintFieldCell } from '../core/fieldColors';
+const props = defineProps<{ mode: ViewMode; targets: Target[]; time: number; compact?: boolean; minimap?: boolean; drivePreview?:boolean }>();
+const emit = defineEmits<{previewOpen:[]; cameraPresented:[targets:Target[] | null]}>();
 const store = useSceneStore(),
   canvas = ref<HTMLCanvasElement | null>(null),
   video = ref<HTMLVideoElement | null>(null);
@@ -39,11 +41,26 @@ const {
   onVideoReady,
   getImage,
 } = useVideoSource(video);
-const recordedCamera = useRecordedCamera(video, computed(() => props.mode === 'camera'));
-const displayedCamera = computed(() => store.replayVideo ? store.frame.cameraFrame : recordedCamera.ready.value?.meta);
+const vehicle = computed(() => store.frame.vehicle);
+const externalPreview = computed(() => !!vehicle.value && store.videoSource.type !== 'mock');
+const replayVideo = computed(() => vehicle.value ? null : store.replayVideo);
+const recordedCamera = useRecordedCamera(video, computed(() => props.mode === 'camera' && !externalPreview.value));
+const displayedCamera = computed(() => replayVideo.value ? store.frame.cameraFrame : recordedCamera.ready.value?.meta);
 const selectedName = computed(() => targetDisplayName(store.selected));
 const measured = computed(() => store.connection !== 'mock');
-const captured = computed(() => store.frame.source==='recording'||store.frame.source==='live');
+const captured = computed(() => store.frame.source==='recording'||store.frame.source==='live'||!!vehicle.value&&!externalPreview.value);
+const localFile = ref<HTMLInputElement|null>(null);
+function previewFile(event: Event) {
+  const input = event.currentTarget as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith('video/') && !file.type.startsWith('image/')) {
+    sourceError.value = '请选择图片或视频';
+    return;
+  }
+  store.videoSource = {type:file.type.startsWith('image/') ? 'photo' : 'video', url:URL.createObjectURL(file)};
+  input.value = '';
+}
 const fillViewport = ref(true);
 const forwardRadar = computed(() => props.compact && fillViewport.value &&
   !store.frame.targets.some(t => t.radar && t.radar.range * Math.cos(t.radar.azimuth * Math.PI / 180) < -2));
@@ -99,6 +116,7 @@ heat.width = riskGrid.width;
 heat.height = riskGrid.height;
 let lastFieldStamp = '';
 let nextCameraTiming = 0;
+const cameraPreviewStale = ref(false);
 let cacheKey = '',
   hits: Hit[] = [],
   worker: Worker | undefined,
@@ -134,8 +152,11 @@ function prepareMeasuredField() {
     const src=row*f.width+col,dst=(f.height-1-row)*f.width+col;
     if(!f.valid[src]||!Number.isFinite(f.values[src]))continue;
     const v=f.values[src];values[dst]=v;
-    const stop=fieldPalette.findIndex(e=>e[0]>=v),b=fieldPalette[Math.max(1,stop)],a=fieldPalette[Math.max(0,stop-1)],t=(v-a[0])/(b[0]-a[0]);
-    im.data.set([1,2,3,4].map(k=>Math.round(a[k]+(b[k]-a[k])*t)),dst*4);
+    if (vehicle.value) paintFieldCell(im.data, dst * 4, v, true);
+    else {
+      const stop=fieldPalette.findIndex(e=>e[0]>=v),b=fieldPalette[Math.max(1,stop)],a=fieldPalette[Math.max(0,stop-1)],t=(v-a[0])/(b[0]-a[0]);
+      im.data.set([1,2,3,4].map(k=>Math.round(a[k]+(b[k]-a[k])*t)),dst*4);
+    }
   }
   ctx.putImageData(im,0,0);paths=measuredLevels.map(v=>contourPath(values,f.width,f.height,v));
 }
@@ -185,10 +206,24 @@ onMounted(() => {
 watch(() => [store.frame.timestamp, store.selectedId, props.mode], requestField);
 onUnmounted(() => {
   disposed = true;
-  if(props.mode==='camera')store.cameraLatencyMs=null;
+  if (props.mode === 'camera') {
+    store.cameraLatencyMs = null;
+    publishCameraTargets(null);
+  }
   worker?.terminate();
 });
-watch(()=>props.mode,(mode,previous)=>{if(previous==='camera'&&mode!=='camera')store.cameraLatencyMs=null;});
+let presentedTargets: Target[] | null = null;
+function publishCameraTargets(targets: Target[] | null) {
+  if (presentedTargets === targets) return;
+  presentedTargets = targets;
+  emit('cameraPresented', targets);
+}
+watch(()=>props.mode,(mode,previous)=>{
+  if (previous === 'camera' && mode !== 'camera') {
+    store.cameraLatencyMs = null;
+    publishCameraTargets(null);
+  }
+});
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
 useCanvas(canvas, (ctx, w, h) => {
   const key = JSON.stringify(worldBounds.value) + measured.value + props.mode + ':' + w + ':' + h;
@@ -206,8 +241,8 @@ useCanvas(canvas, (ctx, w, h) => {
   ctx.drawImage(base, 0, 0);
   if (props.mode === 'camera') {
     let box = { x: 0, y: 0, w, h };
-    if (store.replayVideo) {
-      const player = store.replayVideo;
+    if (replayVideo.value) {
+      const player = replayVideo.value;
       ctx.fillStyle = '#e5eeee';
       ctx.fillRect(0, 0, w, h);
       if (player.readyState >= 2) {
@@ -227,7 +262,9 @@ useCanvas(canvas, (ctx, w, h) => {
       const ready=recordedCamera.ready.value;
       const now=Date.now();
       if(now>=nextCameraTiming){
-        store.cameraLatencyMs=ready&&store.frame.source==='live'&&store.playing?Math.max(0,now-ready.meta.timestamp):null;
+        const age = ready && store.playing ? Math.max(0, now - ready.meta.timestamp) : null;
+        cameraPreviewStale.value = !!vehicle.value && age !== null && age > 1500;
+        store.cameraLatencyMs = (store.frame.source === 'live' || vehicle.value) && !cameraPreviewStale.value ? age : null;
         nextCameraTiming=now+250;
       }
       ctx.fillStyle='#e5eeee';ctx.fillRect(0,0,w,h);
@@ -237,12 +274,18 @@ useCanvas(canvas, (ctx, w, h) => {
         const image=v && v.readyState>=2 && !v.seeking && Math.abs(v.currentTime-(ready.meta.videoTimeSeconds??-1))<.06 ? v : ready.image;
         ctx.drawImage(image,box.x,box.y,box.w,box.h);
         hits=cameraTargets(ctx,w,h,ready.targets,store.selectedId,false,box,ready.meta.annotated!==true);
+        publishCameraTargets(ready.targets);
       }else{
+        publishCameraTargets(null);
         box=imageBox(store.frame.cameraFrame?.width??800,store.frame.cameraFrame?.height??448,w,h);
-        hits=cameraTargets(ctx,w,h,props.targets,store.selectedId,false,box);
-        text(ctx,store.frame.live?.camera.message??'当前时刻无可用录像帧 · 检测数据工程投影',w/2,h/2,'#466e82',15,'center');
+        hits=vehicle.value ? [] : cameraTargets(ctx,w,h,props.targets,store.selectedId,false,box);
+        const message = vehicle.value
+          ? (store.frame.cameraFrame ? '正在读取对应的图像帧' : vehicle.value.cameraMessage)
+          : store.frame.live?.camera.message ?? '当前时刻无可用录像帧 · 检测数据工程投影';
+        text(ctx,message,w/2,h/2,'#466e82',props.compact ? 12 : 15,'center');
       }
     } else if (store.videoSource.type !== 'mock') {
+      publishCameraTargets(null);
       ctx.fillStyle = '#e5eded';
       ctx.fillRect(0, 0, w, h);
       const image = store.videoSource.type === 'carla' ? getImage() : video.value;
@@ -257,7 +300,7 @@ useCanvas(canvas, (ctx, w, h) => {
         text(ctx, sourceError.value || '正在等待图像流…', w / 2, h / 2, '#708a8c', 16, 'center');
     }
     if(!captured.value) hits =
-      store.videoSource.type === 'mock' || videoReady.value
+      !externalPreview.value && (store.videoSource.type === 'mock' || videoReady.value)
         ? cameraTargets(
             ctx,
             w,
@@ -300,7 +343,7 @@ useCanvas(canvas, (ctx, w, h) => {
       }
       ctx.restore();
     }
-    const targets = props.mode === 'risk' && store.usesRadarMeasurements
+    const targets = props.mode === 'risk' && !vehicle.value && store.usesRadarMeasurements
       ? props.targets.filter(target => target.radar) : props.targets;
     hits = mapTargets(ctx, w, h, targets, store.selectedId, props.mode, trailsVisible.value, worldBounds.value, !props.minimap);
   }
@@ -336,13 +379,16 @@ function inspect(event: MouseEvent) {
 </script>
 <template>
   <div class="scene-viewport" :class="'view-' + mode">
+    <img v-if="mode==='camera' && vehicle && store.videoSource.type==='photo'" class="vehicle-photo"
+      :style="{objectFit:compact && fillViewport?'cover':'contain'}" :src="store.videoSource.url"
+      alt="本地实拍照片预览" @error="sourceError='图片无法解码'" />
     <svg v-if="mode === 'camera'" aria-hidden="true" width="0" height="0" style="position: absolute">
       <filter :id="sharpenFilter" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
         <feConvolveMatrix order="3" kernelMatrix="0 -.18 0 -.18 1.72 -.18 0 -.18 0" divisor="1" edgeMode="duplicate" preserveAlpha="true" />
       </filter>
     </svg>
     <video
-      v-if="mode === 'camera' && !store.replayVideo && (store.frame.cameraFrame?.videoUrl || store.videoSource.type === 'video')"
+      v-if="mode === 'camera' && !replayVideo && (store.frame.cameraFrame?.videoUrl || store.videoSource.type === 'video')"
       ref="video"
       :src="store.frame.source === 'recording' ? undefined : store.frame.cameraFrame?.videoUrl || store.videoSource.url"
       muted
@@ -378,7 +424,8 @@ function inspect(event: MouseEvent) {
       <span
         ><i class="live-dot" />
         {{
-          mode === 'camera'
+          vehicle ? (mode === 'camera' ? externalPreview ? '独立图像预览' : '固定摄像头 · 实拍画面'
+            : mode === 'radar' ? '车载雷达 · 车头 0°' : '车路协同 · 融合风险场') : mode === 'camera'
             ? store.frame.live ? store.frame.live.camera.state==='streaming' ? '实时摄像头 · LIVE RTSP / AI DETECTION' : '实时摄像头 · 等待网络视频' : measured ? '实测录像 · 原始像素检测' : '城市道路 · 高位视角'
             : mode === 'radar'
               ? store.frame.live ? '实物雷达 · LIVE TCP / TCR300' : measured ? '实测点迹 · SENSOR XY' : '全向探测 · LOCAL ENU'
@@ -391,7 +438,7 @@ function inspect(event: MouseEvent) {
             : mode === 'radar'
               ? (forwardRadar ? '前向视图 / ' : 'PPI / ')+(store.frame.radarRange??200)+' m'
               : store.frame.riskField ? store.frame.riskField.width+' × '+store.frame.riskField.height : measured ? '风险未知' : '128 × 96'
-        }}<b>{{ store.playing ? '同步运行' : '已暂停' }}</b></span
+        }}<b>{{ mode === 'camera' && captured && cameraPreviewStale ? '画面延迟 · 上一帧' : store.playing ? '同步运行' : '已暂停' }}</b></span
       >
     </div>
     <div v-if="mode !== 'camera'" class="compass">
@@ -400,9 +447,9 @@ function inspect(event: MouseEvent) {
       ><small>{{ store.frame.northCalibrated===false ? "传感器 0°" : "正北 0°" }}</small>
     </div>
     <div v-if="mode === 'camera'" class="camera-location">
-      <span>CAMERA 01</span><strong>{{ store.frame.live ? "网络摄像头 · 实时接入" : measured ? "实测录像 · 原始采集画面" : "中央大道交叉口" }}</strong
+      <span>CAMERA 01</span><strong>{{ vehicle ? '场边固定摄像头' : store.frame.live ? "网络摄像头 · 实时接入" : measured ? "实测录像 · 原始采集画面" : "中央大道交叉口" }}</strong
       ><small>{{
-        store.frame.live ? store.frame.live.camera.message : measured ? '采样录像自带标注 / 原始 BBox 叠加' : store.videoSource.type === 'mock' ? '模拟场景 / 视觉与雷达融合' : '外部图像 / 融合检测叠加'
+        vehicle ? (externalPreview ? '独立预览' : vehicle.cameraMessage) : store.frame.live ? store.frame.live.camera.message : measured ? '采样录像自带标注 / 原始 BBox 叠加' : store.videoSource.type === 'mock' ? '模拟场景 / 视觉与雷达融合' : '外部图像 / 融合检测叠加'
       }}</small>
     </div>
     <div class="scene-bottom">
@@ -416,10 +463,15 @@ function inspect(event: MouseEvent) {
       ><span>{{ selectedName }}<i />{{ ((store.frame.replay?.positionMs ?? (store.frame.live ? store.frame.timestamp-store.frame.live.startedAt : store.frame.timestamp)) / 1000).toFixed(1) }} s</span>
     </div>
     <div v-if="mode === 'camera' && compact" class="scene-tools">
+      <template v-if="drivePreview">
+        <input ref="localFile" type="file" accept="image/*,video/*" hidden @change="previewFile" />
+        <button @click="emit('previewOpen'); localFile?.click()">本地照片／录像</button>
+        <button v-if="externalPreview" @click="openSource('mock')">返回摄像头</button>
+      </template>
       <span v-if="fillViewport">等比裁切</span>
       <button @click="fillViewport = !fillViewport">{{ fillViewport ? '完整画面' : '铺满画面' }}</button>
     </div>
-    <div v-else-if="mode === 'camera' && !captured" class="scene-tools">
+    <div v-else-if="mode === 'camera' && (!captured || vehicle)" class="scene-tools">
       <span>图像源</span
       ><button
         v-for="t in ['mock', 'video', 'carla'] as const"
@@ -427,8 +479,12 @@ function inspect(event: MouseEvent) {
         @click="openSource(t)"
         :class="{ active: store.videoSource.type === t }"
       >
-        {{ t.toUpperCase() }}
+        {{ vehicle && t === 'mock' ? '固定摄像头' : t.toUpperCase() }}
       </button>
+      <template v-if="vehicle">
+        <input ref="localFile" type="file" accept="image/*,video/*" hidden @change="previewFile" />
+        <button @click="localFile?.click()">本地照片／录像</button>
+      </template>
     </div>
     <div v-else-if="mode !== 'camera'" class="scene-tools">
       <button v-if="compact && mode === 'radar'" @click="fillViewport = !fillViewport">

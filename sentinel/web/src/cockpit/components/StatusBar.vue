@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import type { RouteLocationRaw } from 'vue-router';
 import { useSceneStore } from '../stores/scene';
 import AnimatedMetric from './AnimatedMetric.vue';
+import CockpitBrand from './CockpitBrand.vue';
+import UiIcon from './UiIcon.vue';
+const props = defineProps<{switchTo: RouteLocationRaw; vehicle?:boolean; radarOnly?:boolean; statusText?:string}>();
 const store = useSceneStore(),
   now = ref(new Date()),
   full = ref(false),
@@ -40,6 +44,9 @@ const displayedStatus = computed(() => {
 function syncFull() {
   full.value = !!document.fullscreenElement;
 }
+function togglePlayback() {
+  store.playing = !store.playing;
+}
 async function toggleFull() {
   try {
     if (document.fullscreenElement) await document.exitFullscreen();
@@ -62,9 +69,9 @@ function keyboard(event: KeyboardEvent) {
     document.querySelector('.source-dialog, dialog[open]')
   )
     return;
-  if (event.code === 'Space') {
+  if (event.code === 'Space' && !props.vehicle) {
     event.preventDefault();
-    store.playing = !store.playing;
+    togglePlayback();
   }
   if (event.code === 'KeyF') void toggleFull();
 }
@@ -84,28 +91,15 @@ onUnmounted(() => {
 </script>
 <template>
   <header class="system-header glass-panel">
-    <div class="brand">
-      <svg viewBox="0 0 56 64" aria-hidden="true">
-        <defs>
-          <linearGradient id="brand-gradient" x1="0" y1="0" x2="1" y2="1">
-            <stop stop-color="#123a49" />
-            <stop offset=".5" stop-color="#008f9d" />
-            <stop offset="1" stop-color="#50dec9" />
-          </linearGradient>
-        </defs>
-        <path d="M28 3 47 16 52 36 39 55 28 61 10 47 4 28 15 10Z" fill="url(#brand-gradient)" />
-        <path d="m28 10 13 14-2 18-11 13-13-15 3-18Z" fill="#e7fbf7" />
-        <path d="m28 14 5 18-5 20-5-20Z" fill="#008e9b" />
-        <path d="M28 3v9M28 52v9" stroke="#e9ffff" stroke-width="1.5" />
-      </svg>
-      <div>
-        <h1>SENTINEL</h1>
-        <p>雷达视觉监控台</p>
-      </div>
+    <div class="header-brand">
+      <CockpitBrand title="SENTINEL" subtitle="雷达视觉监控台" />
+      <RouterLink class="vehicle-switch" :to="switchTo">
+        <UiIcon name="car" :size="18" />{{ vehicle ? '返回总览' : '切换实体小车' }}
+      </RouterLink>
     </div>
     <div class="system-health">
       <span :class="{ offline: ['error', 'disconnected'].includes(store.connection) || store.frame.live && store.frame.live.radar.state!=='streaming' && store.frame.live.camera.state!=='streaming' }"
-        ><i class="live-dot" />{{ displayedStatus }}</span
+        ><i class="live-dot" />{{ vehicle ? statusText : displayedStatus }}</span
       ><svg viewBox="0 0 140 20">
         <path
           d="M0 12h25l5-7 7 12 9-15 6 10h14l5-4 5 4h64"
@@ -119,7 +113,7 @@ onUnmounted(() => {
       <strong>{{ clock }}</strong
       ><span>{{ date }} <i>UTC+8</i></span>
     </div>
-    <div class="header-performance">
+    <div v-if="!vehicle" class="header-performance">
       <span
         >FPS <b>{{ store.fps || '—' }}</b></span
       ><span
@@ -128,8 +122,8 @@ onUnmounted(() => {
     </div>
     <div class="global-metrics">
       <div>
-        <span>在线目标</span
-        ><strong><AnimatedMetric :value="store.frame.targets.length" :pad="2" /></strong>
+        <span>{{ radarOnly ? '雷达目标' : vehicle ? '融合目标' : '在线目标' }}</span
+        ><strong><AnimatedMetric :value="vehicle ? (store.frame.riskField ? store.frame.targets.filter(target => target.fusion).length : null) : store.frame.targets.length" :pad="2" /></strong>
       </div>
       <div>
         <span>平均风险</span><strong><AnimatedMetric :value="store.averageRisk" :digits="2" /></strong>
@@ -144,8 +138,9 @@ onUnmounted(() => {
     <div class="header-actions">
       <slot />
       <button
+        v-if="!vehicle"
         class="icon-button"
-        @click="store.playing = !store.playing"
+        @click="togglePlayback"
         :aria-label="store.frame.source==='live' ? (store.playing ? '冻结实时显示' : '继续实时显示') : (store.playing ? '暂停回放' : '播放回放')"
         :title="store.playing ? '暂停 · Space' : (store.frame.source === 'recording' ? '播放 · Space' : '继续 · Space')"
       >
@@ -163,3 +158,29 @@ onUnmounted(() => {
     <div v-if="notice" class="notice">{{ notice }}</div>
   </header>
 </template>
+
+<style scoped>
+.header-brand { display: flex; flex: 1; align-items: center; flex-wrap: wrap; gap: 6px 16px; }
+.header-brand .brand { flex: none; }
+.vehicle-switch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-inline-size: 128px;
+  min-block-size: 34px;
+  padding: 6px 10px;
+  border: 1px solid #77b5c1;
+  border-radius: 6px;
+  color: #e3f7f9;
+  background: #164d58;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.vehicle-switch:hover, .vehicle-switch:focus-visible { background: #226673; }
+@media (max-width: 520px) {
+  .header-brand { flex-basis: 100%; }
+}
+</style>

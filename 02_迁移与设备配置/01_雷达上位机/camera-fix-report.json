@@ -1,0 +1,39 @@
+{
+  "source": "E:\\雷达上位机\\TCR300_Tools_V2.0.7",
+  "destination": "E:\\car\\TCR300_摄像头修复版",
+  "original_sha256": "a61fd169cb923227e5d5d624c689b02204f2374c1f6224fe2030cd703db2236c",
+  "patched_sha256": "01192658badf21c6e699a2ca1238200db89fd89a832d036aef8306847740666f",
+  "changes": [
+    {
+      "method": "OpenUsbVideo(deviceIndex, player)",
+      "file_offset": 119145,
+      "original_byte": 3,
+      "patched_byte": 22
+    },
+    {
+      "method": "OpenUsbVideo(moniker, player)",
+      "file_offset": 119342,
+      "original_byte": 6,
+      "patched_byte": 22
+    }
+  ],
+  "explanation": "Select VideoCapabilities[0] rather than using the camera device index as the capability index.",
+  "verification": {
+    "device_index": 1,
+    "capabilities_count": 1,
+    "original": {
+      "exit": 5,
+      "video_source_assigned": false
+    },
+    "fixed": {
+      "exit": 0,
+      "frames_received": 131,
+      "width": 1920,
+      "height": 1080,
+      "sampled_luma_min": 3,
+      "sampled_luma_max": 254
+    },
+    "method": "32-bit AForge, invoke the application Camera_USB.OpenUsbVideo(string, VideoSourcePlayer) directly",
+    "full_main_window_display_verified": false
+  }
+}

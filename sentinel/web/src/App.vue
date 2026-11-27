@@ -1,5 +1,6 @@
 <template>
   <Dashboard v-if="isMonitor" :source="source" :bundled-replay="bundledReplay" @change-source="changeSource" />
+  <RouterView v-else-if="route.name === 'vehicle'" />
   <AppShell v-else>
     <RouterView />
   </AppShell>
