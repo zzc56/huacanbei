@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 const source = process.argv[2] && resolve(process.argv[2]);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 const radarPreview = process.argv[3] === '--radar-preview';
-const outputName = radarPreview ? 'L150Pro-F407VET6-Radar-Multitarget-Grouped' : 'L150Pro-F407VET6-APP-Watchdog';
-const output = join(repo, 'sentinel', 'logs', 'L150Pro-Hall-AC6-Watchdog-F407VE' + (radarPreview ? '-Radar-Grouped' : ''));
+const outputName = radarPreview ? 'L150Pro-F407VET6-Radar-Compact-25m' : 'L150Pro-F407VET6-APP-Watchdog';
+const output = join(repo, 'sentinel', 'logs', 'L150Pro-Hall-AC6-Watchdog-F407VE' + (radarPreview ? '-Radar-Compact-25m' : ''));
 if (!source || !existsSync(join(source, 'USER', 'WHEELTEC.uvprojx'))) {
   throw new Error('Pass the path of the configured L150Pro-Hall-AC6 project.');
 }
@@ -180,9 +180,9 @@ void LidarPreview_Send(void)
     __set_PRIMASK(mask);
 
     int count = seen && (u32)(now - captured_tick) <= M2T(450U) ? (int)scan.count : -1;
-    /* At most 95 bytes including terminator and NUL, below the UART print buffer. */
-    char frame[96];
-    int used = snprintf(frame, sizeof frame, "{RM%lu:%lu:%d", (unsigned long)sequence,
+    /* Up to 100 bytes on the wire at 5 Hz, below the 256-byte UART print buffer. */
+    char frame[101];
+    int used = snprintf(frame, sizeof frame, "{RN%lu:%lu:%d", (unsigned long)sequence,
                         (unsigned long)captured_tick, count);
     for (int i = 0; i < count; ++i) {
         used += snprintf(frame + used, sizeof frame - (size_t)used, ":%u:%d",

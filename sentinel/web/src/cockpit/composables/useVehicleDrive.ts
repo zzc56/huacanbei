@@ -1,5 +1,5 @@
 import { computed, onScopeDispose, ref, shallowRef, watch, type Ref } from 'vue';
-import type { DriveDirection, DriveSnapshot, VehicleDetectionMode } from '../../../../sentinel-backend/src/vehicle/contracts';
+import type { DriveDirection, DriveSnapshot, StationaryPose, VehicleDetectionMode } from '../../../../sentinel-backend/src/vehicle/contracts';
 
 const forwardKeys = ['KeyW', 'ArrowUp'];
 
@@ -22,6 +22,10 @@ export function useVehicleDrive(active: Ref<boolean>, endpoint: URL, keyboardBlo
   function setRadarTrial(enabled: boolean, mode: VehicleDetectionMode = 'radar') {
     stop();
     send(enabled ? 'bench:' + mode : 'bench:end');
+  }
+  function setDriveOrigin(origin: StationaryPose | null) {
+    stop();
+    send(origin ? `pose:${origin.stationaryId}:${origin.xM}:${origin.yM}:${origin.headingDeg}` : 'clear-pose');
   }
   function enlarge() { stop(); expanded.value = !expanded.value; }
   function key(event: KeyboardEvent) {
@@ -92,5 +96,5 @@ export function useVehicleDrive(active: Ref<boolean>, endpoint: URL, keyboardBlo
     });
   }, { immediate:true, flush:'sync' });
   onScopeDispose(() => { socket?.close(); });
-  return { snapshot, held, locked, expanded, direction, enlarge, stop, setTelemetry, setRadarTrial };
+  return { snapshot, held, locked, expanded, direction, enlarge, stop, setTelemetry, setRadarTrial, setDriveOrigin };
 }

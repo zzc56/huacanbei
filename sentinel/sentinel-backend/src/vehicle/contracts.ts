@@ -3,9 +3,17 @@ export interface GroundPoint {
   yM: number;
 }
 
-export interface StationaryPose extends GroundPoint {
+export interface GroundPose extends GroundPoint {
   headingDeg: number;
+}
+
+export interface StationaryPose extends GroundPose {
   stationaryId: string;
+}
+
+export interface VehiclePose extends GroundPose {
+  speedMps: number;
+  capturedAtMs: number;
 }
 
 export type StationaryFusionState = 'waiting_for_pose' | 'waiting_for_radar' | 'waiting_for_camera' | 'waiting_for_sync' | 'aligned';
@@ -72,11 +80,13 @@ export interface VehicleResult {
   motion: {
     action: 'cruise' | 'slow' | 'stop';
     speedLimitMps: number;
-    reason: 'near_obstacle' | 'forward_risk' | 'blind_corner' | 'camera_unavailable' | 'path_clear' | 'pose_or_lidar_unavailable';
+    reason: 'near_obstacle' | 'forward_risk' | 'blind_corner' | 'camera_approach' | 'camera_unavailable' | 'path_clear' | 'pose_or_lidar_unavailable';
   };
 }
 
 export const radarTrialSettings = { speedMmps: 400, stopDistanceM: 0.40 } as const;
+export const stockLidarLimits = { minRangeM: 0.10, legacyMaxRangeM: 2, maxRangeM: 25, halfSectorDeg: 20 } as const;
+export const wheelFeedbackMaxAgeMs = 350;
 export type DriveDirection = 'forward' | 'stop';
 export type VehicleDetectionMode = 'radar' | 'fusion';
 export interface StockTelemetry {
@@ -91,6 +101,8 @@ export interface StockTelemetry {
 export interface StockLidarPreview {
   status: 'waiting' | 'offline' | 'stale' | 'online';
   sample: StockLidarSample | null;
+  maxRangeM?: number;
+  displayObservations?: ScanPoint[];
 }
 
 export interface StockLidarSample {
@@ -99,6 +111,7 @@ export interface StockLidarSample {
   receivedAtMs: number;
   nearest: ScanPoint | null;
   observations: ScanPoint[];
+  brakingObservations?: ScanPoint[];
 }
 
 export type RadarStopMeasurement =
@@ -125,4 +138,5 @@ export interface DriveSnapshot {
   bench?: BenchDriveStatus;
   radarRisk?: VehicleResult;
   fusionRisk?: VehicleResult;
+  odometry?: { status: 'tracking'; pose: VehiclePose } | { status: 'reset_required' };
 }

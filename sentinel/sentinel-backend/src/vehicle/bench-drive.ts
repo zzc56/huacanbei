@@ -23,6 +23,7 @@ export class BenchDrive {
   private measurement: RadarStopMeasurement | undefined;
   private measurementStartedAt = 0;
   private standstillSweep: number | undefined;
+  get isDrivingForward() { return this.direction === 'forward'; }
   constructor(private serial: BenchTransport, private armedAt: number, sample: StockTelemetry['sample'],
               private fusionRisk?: (radar: StockLidarPreview, speedMps: number) => VehicleResult | null) {
     const setting = serial.setting();
@@ -124,15 +125,18 @@ export class BenchDrive {
     }
     const wheels = this.serial.wheelFeedbackForMotion(now);
     const speedMps = wheels ? (wheels.wheelAMps + wheels.wheelBMps) / 2 : 0;
-    const risk = (this.fusionRisk ?? evaluateOnboardRadarRisk)(radar, speedMps);
-    if (!risk?.field) {
+    const radarRisk = evaluateOnboardRadarRisk(radar, speedMps);
+    const fused = this.fusionRisk ? this.fusionRisk(radar, speedMps) : radarRisk;
+    if (!fused?.field) {
       this.radarState = 'unavailable';
       this.fail('融合风险场失去实时对齐，已撤销驱动');
       return false;
     }
+    const risk = radarRisk?.motion.action === 'stop' ? radarRisk : fused;
     if (risk.motion.action === 'stop') {
       this.radarState = 'obstacle';
-      this.message = risk.closestForwardM === null ? '风险场要求停车' : `通道内前方障碍 ${risk.closestForwardM.toFixed(2)} m`;
+      this.message = risk.motion.reason === 'camera_approach' ? '监控预测目标将进入前方通道，提前停车'
+        : risk.closestForwardM === null ? '风险场要求停车' : `通道内前方障碍 ${risk.closestForwardM.toFixed(2)} m`;
       if (this.direction === 'forward') this.blockForward(now);
     } else if (this.needsRelease) {
       this.radarState = 'release';

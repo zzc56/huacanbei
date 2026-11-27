@@ -1,2 +1,13 @@
 * text=auto
 *.cmd text eol=crlf
+
+# Preserve the byte checksums in the imported equipment archive and firmware release.
+/00_阅读说明.txt -text
+/01_雷达原始软件附带资料/** -text !eol
+/02_迁移与设备配置/** -text !eol
+/03_摄像头有线接入历史配置_20261016/** -text !eol
+/04_OBS历史配置/** -text !eol
+/05_研究上位机说明与配置/** -text !eol
+/06_交接手册/** -text !eol
+/文件清单.csv -text
+/firmware/l150pro-hall/releases/*.hex -text

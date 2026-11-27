@@ -1,14 +1,15 @@
 import { performance } from 'node:perf_hooks';
 import type { FastifyInstance } from 'fastify';
 import { WebSocket, WebSocketServer } from 'ws';
-import type { DriveSnapshot, StockLidarPreview, StockTelemetry, VehicleResult } from './contracts.js';
+import type { DriveSnapshot, StockLidarPreview, StockTelemetry, VehiclePose, VehicleResult } from './contracts.js';
 import { StockTelemetryReader } from './stock-telemetry.js';
 import { BenchDrive } from './bench-drive.js';
-import { evaluateOnboardRadarRisk } from './risk.js';
+import { evaluateOnboardRadarRisk, vehicleLimits } from './risk.js';
+import { StraightOdometry } from './straight-odometry.js';
 
 export function registerVehicleDrive(app: FastifyInstance, origins: Set<string>, telemetryPort?: string,
-                                     readFusionRisk?: (radar: StockLidarPreview, speedMps: number) => VehicleResult | null) {
-  const server = new WebSocketServer({ noServer: true, maxPayload: 128, perMessageDeflate: false });
+                                     readFusionRisk?: (radar: StockLidarPreview, speedMps: number, pose?: VehiclePose) => VehicleResult | null) {
+  const server = new WebSocketServer({ noServer: true, maxPayload: 256, perMessageDeflate: false });
   const telemetry = telemetryPort ? new StockTelemetryReader(telemetryPort) : undefined;
   let telemetryOwner: WebSocket | undefined;
   app.server.on('upgrade', (req, socket, head) => {
@@ -25,6 +26,23 @@ export function registerVehicleDrive(app: FastifyInstance, origins: Set<string>,
   server.on('connection', (ws: WebSocket, localBrowser: boolean) => {
     let telemetryBusy = false;
     let bench: BenchDrive | undefined;
+    let odometry: StraightOdometry | null | undefined;
+    function updateOdometry(now: number) {
+      odometry?.update(telemetry?.wheelFeedbackForMotion(now) ?? null, bench?.isDrivingForward === true);
+    }
+    const fusionRisk = readFusionRisk && ((radar: StockLidarPreview, speedMps: number) => {
+      if (odometry === undefined) return readFusionRisk(radar, speedMps);
+      if (!odometry || !telemetry || radar.status !== 'online') return null;
+      const now = Date.now();
+      for (const scan of telemetry.radarHistory(performance.now())) {
+        if (now - scan.receivedAtMs > vehicleLimits.maxAgeMs) break;
+        const pose = odometry.poseAt(scan.receivedAtMs);
+        if (!pose) continue;
+        const result = readFusionRisk({ status:'online', sample:scan }, speedMps, pose);
+        if (result) return result;
+      }
+      return null;
+    });
     function telemetrySnapshot(): StockTelemetry | undefined {
       if (!telemetry) return undefined;
       if (telemetryOwner === ws) return telemetry.snapshot();
@@ -35,22 +53,28 @@ export function registerVehicleDrive(app: FastifyInstance, origins: Set<string>,
       telemetryOwner = undefined;
       telemetry?.close(bench !== undefined);
       bench = undefined;
+      odometry = undefined;
     }
     function publish() {
       const now = performance.now();
       const state: DriveSnapshot = {};
+      updateOdometry(now);
       if (bench) state.bench = bench.snapshot(now);
       const feedback = telemetrySnapshot();
       if (feedback) state.telemetry = feedback;
+      if (odometry !== undefined) {
+        const pose = odometry?.poseAt(Date.now());
+        state.odometry = pose ? { status:'tracking', pose } : { status:'reset_required' };
+      }
       if (ws.readyState !== WebSocket.OPEN || ws.bufferedAmount >= 128 * 1024) return;
       if (feedback?.lidar && telemetry) {
         const radar = telemetry.radarForMotion(now);
         const wheels = telemetry?.wheelFeedbackForMotion(now);
         const speedMps = wheels ? (wheels.wheelAMps + wheels.wheelBMps) / 2 : 0;
-        const radarRisk = evaluateOnboardRadarRisk(radar, speedMps);
+        const radarRisk = evaluateOnboardRadarRisk(radar, speedMps, true);
         if (radarRisk) state.radarRisk = radarRisk;
-        const fusionRisk = wheels && readFusionRisk?.(radar, speedMps);
-        if (fusionRisk) state.fusionRisk = fusionRisk;
+        const fused = wheels && fusionRisk?.(radar, speedMps);
+        if (fused) state.fusionRisk = fused;
       }
       ws.send(JSON.stringify(state));
     }
@@ -58,14 +82,28 @@ export function registerVehicleDrive(app: FastifyInstance, origins: Set<string>,
     ws.on('message', (raw, binary) => {
       const action = raw.toString();
       const now = performance.now();
+      updateOdometry(now);
       if (!binary && (action === 'bench:radar' || action === 'bench:fusion' || action === 'bench:end')) {
         if (localBrowser && telemetry && telemetryOwner === ws) {
           const sample = telemetry.snapshot().sample;
-          if (!bench && (action === 'bench:radar' || action === 'bench:fusion' && readFusionRisk)) {
-            bench = new BenchDrive(telemetry, now, sample, action === 'bench:fusion' ? readFusionRisk : undefined);
+          if (!bench && (action === 'bench:radar' || action === 'bench:fusion' && fusionRisk)) {
+            bench = new BenchDrive(telemetry, now, sample, action === 'bench:fusion' ? fusionRisk : undefined);
           } else if (action === 'bench:end' && bench) {
             bench.end(now, sample);
             bench = undefined;
+          }
+        }
+      } else if (!binary && (action.startsWith('pose:') || action === 'clear-pose')) {
+        if (localBrowser && telemetry && telemetryOwner === ws && !bench) {
+          if (action === 'clear-pose') odometry = undefined;
+          else {
+            const [stationaryId, x, y, heading, extra] = action.slice(5).split(':');
+            const xM = Number(x), yM = Number(y), headingDeg = Number(heading);
+            const stationary = telemetry.stationaryForMotion(now), wheels = telemetry.wheelFeedbackForMotion(now);
+            const valid = extra === undefined && !!x && !!y && !!heading && Number.isFinite(xM) && Math.abs(xM) <= 1000 &&
+              Number.isFinite(yM) && Math.abs(yM) <= 1000 && Number.isFinite(headingDeg) && Math.abs(headingDeg) <= 360;
+            odometry = valid && stationary && stationary.id === stationaryId && wheels?.wheelAMps === 0 && wheels.wheelBMps === 0
+              ? new StraightOdometry({xM, yM, headingDeg}, wheels) : null;
           }
         }
       } else if (!binary && telemetry && (action === 'telemetry:open' || action === 'telemetry:close')) {

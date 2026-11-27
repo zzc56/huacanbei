@@ -1,13 +1,14 @@
 import type { Target } from '../contracts.js';
 import { config } from '../config.js';
 import { RiskFieldEngine } from '../engines/risk-field.engine.js';
-import type { CameraPoint, GroundPoint, RightTurnCorridor, ScanPoint, SensorSample, StockLidarPreview, VehicleObstacle as Obstacle, VehicleResult } from './contracts.js';
+import type { CameraPoint, RightTurnCorridor, ScanPoint, SensorSample, StockLidarPreview, VehicleObstacle as Obstacle, VehiclePose, VehicleResult } from './contracts.js';
 import { radarTrialSettings } from './contracts.js';
 
 export interface VehicleFrame {
-  pose: GroundPoint & { headingDeg: number; speedMps: number; capturedAtMs: number };
+  pose: VehiclePose;
   camera: (SensorSample<CameraPoint> & { sequence?: number }) | null;
   lidar: SensorSample<ScanPoint> | null;
+  lidarBrakingObservations?: readonly ScanPoint[] | undefined;
 }
 
 const radians = Math.PI / 180;
@@ -20,6 +21,12 @@ export const vehicleLimits = {
 // Low-speed indoor risk parameters. All lengths are in metres.
 const riskParameters = { ...config.risk, distanceScale: 0.8, speedScale: 0.35,
   ttcScale: 1.2, sigma: 0.14, predictionSeconds: 0.35 };
+
+function occupancyInterval(position: number, velocity: number, min: number, max: number) {
+  if (Math.abs(velocity) < 0.001) return position >= min && position <= max ? [-Infinity, Infinity] as const : null;
+  const first = (min - position) / velocity, second = (max - position) / velocity;
+  return [Math.min(first, second), Math.max(first, second)] as const;
+}
 
 function mergeObservations(lidar: Obstacle[], camera: Obstacle[]): Obstacle[] {
   const pairs = lidar.flatMap((point, l) => camera.flatMap((vision, c) => {
@@ -46,7 +53,8 @@ function mergeObservations(lidar: Obstacle[], camera: Obstacle[]): Obstacle[] {
 }
 
 export function evaluateVehicleRisk(frame: VehicleFrame | null, now: number, corner?: RightTurnCorridor,
-                                    requireCamera = true, stopDistanceM = vehicleLimits.stopDistanceM): VehicleResult {
+                                    requireCamera = true, stopDistanceM = vehicleLimits.stopDistanceM,
+                                    predictCameraApproach = false): VehicleResult {
   const pose = frame?.pose;
   const fresh = (time: number) => time <= now && now - time <= vehicleLimits.maxAgeMs;
   const camera = frame?.camera && fresh(frame.camera.capturedAtMs) ? frame.camera : null;
@@ -67,8 +75,10 @@ export function evaluateVehicleRisk(frame: VehicleFrame | null, now: number, cor
 
   // Shared ground coordinates use a clockwise heading from +Y. Vehicle X is right, Y forward.
   const sin = Math.sin(pose.headingDeg * radians), cos = Math.cos(pose.headingDeg * radians);
+  const visionOffset = cameraReady ? (pose.capturedAtMs - camera.capturedAtMs) / 1000 : 0;
   const visionPoints = cameraReady ? camera.observations.map(({ xM, yM, velocity }, cameraIndex): Obstacle => {
-    const dx = xM - pose.xM, dy = yM - pose.yM;
+    const dx = xM + (velocity?.xMps ?? 0) * visionOffset - pose.xM;
+    const dy = yM + (velocity?.yMps ?? 0) * visionOffset - pose.yM;
     return {
       xM: dx * cos - dy * sin, yM: dx * sin + dy * cos, source: 'camera', cameraIndex,
       ...(velocity && { velocity: {
@@ -79,10 +89,14 @@ export function evaluateVehicleRisk(frame: VehicleFrame | null, now: number, cor
   }) : [];
   // Move the earlier/later scan to the pose timestamp for a straight-moving car and static obstacles.
   const scanOffsetM = pose.speedMps * (lidar.capturedAtMs - pose.capturedAtMs) / 1000;
-  const scanPoints = lidar.observations.map(({ rangeM, bearingDeg, velocity }, lidarIndex): Obstacle => ({
-    xM: rangeM * Math.sin(bearingDeg * radians), yM: rangeM * Math.cos(bearingDeg * radians) + scanOffsetM, source: 'lidar', lidarIndex,
-    ...(velocity && { velocity }),
-  }));
+  function projectScan(points: readonly ScanPoint[]): Obstacle[] {
+    return points.map(({ rangeM, bearingDeg, velocity }, lidarIndex) => ({
+      xM: rangeM * Math.sin(bearingDeg * radians), yM: rangeM * Math.cos(bearingDeg * radians) + scanOffsetM, source: 'lidar', lidarIndex,
+      ...(velocity && { velocity }),
+    }));
+  }
+  const scanPoints = projectScan(lidar.observations);
+  const brakingScanPoints = frame.lidarBrakingObservations ? projectScan(frame.lidarBrakingObservations) : scanPoints;
   const obstacles = mergeObservations(scanPoints, visionPoints);
 
   const targets = obstacles.map(({ xM, yM, velocity }, i): Target => {
@@ -121,7 +135,7 @@ export function evaluateVehicleRisk(frame: VehicleFrame | null, now: number, cor
       yM: point.yM + (point.velocity?.yMps ?? 0) * horizon,
     };
   }
-  const closest = [...scanPoints, ...visionPoints].reduce((distance, point) => {
+  const closest = [...brakingScanPoints, ...visionPoints].reduce((distance, point) => {
     const next = predicted(point);
     return Math.min(distance, distanceAlongPath(point.xM, point.yM), distanceAlongPath(next.xM, next.yM));
   }, Infinity);
@@ -134,9 +148,18 @@ export function evaluateVehicleRisk(frame: VehicleFrame | null, now: number, cor
     ? corner.forwardM : Infinity;
   const decisionDistance = Math.min(guardedCorner, closest);
   const cornerBlocks = guardedCorner < closest && guardedCorner <= vehicleLimits.slowDistanceM;
+  const approachSpeed = Math.max(pose.speedMps, radarTrialSettings.speedMmps / 1000);
+  const poseAge = (now - pose.capturedAtMs) / 1000;
+  const cameraApproach = predictCameraApproach && visionPoints.some(point => {
+    const lateral = occupancyInterval(point.xM, point.velocity?.xMps ?? 0, -halfWidth, halfWidth);
+    const forward = occupancyInterval(point.yM, (point.velocity?.yMps ?? 0) - approachSpeed, 0, stopDistanceM);
+    // Test whether a camera obstacle and the vehicle can occupy the braking zone at the same time.
+    return lateral && forward && Math.max(0, lateral[0], forward[0]) <= Math.min(poseAge + 0.85, lateral[1], forward[1]);
+  });
 
   const motion: VehicleResult['motion'] = decisionDistance <= stopDistanceM
     ? { action: 'stop', speedLimitMps: 0, reason: cornerBlocks ? 'blind_corner' : 'near_obstacle' }
+    : cameraApproach ? { action: 'stop', speedLimitMps: 0, reason: 'camera_approach' }
     : decisionDistance <= vehicleLimits.slowDistanceM || corridorRisk >= riskParameters.threshold
       ? { action: 'slow', speedLimitMps: vehicleLimits.slowLimitMps, reason: cornerBlocks ? 'blind_corner' : 'forward_risk' }
       : requireCamera && !cameraReady
@@ -148,13 +171,14 @@ export function evaluateVehicleRisk(frame: VehicleFrame | null, now: number, cor
     cameraCount: cameraReady ? visionPoints.length : null, lidarCount: scanPoints.length };
 }
 
-export function evaluateOnboardRadarRisk(radar: StockLidarPreview, speedMps: number): VehicleResult | null {
+export function evaluateOnboardRadarRisk(radar: StockLidarPreview, speedMps: number, presentTracks = false): VehicleResult | null {
   if (radar.status !== 'online' || !radar.sample) return null;
-  const { observations, receivedAtMs } = radar.sample;
+  const { observations, brakingObservations, receivedAtMs } = radar.sample;
   // The radar scan already uses local vehicle coordinates. The view does not require a site pose.
   return evaluateVehicleRisk({
     pose: { xM: 0, yM: 0, headingDeg: 0, speedMps, capturedAtMs: receivedAtMs },
     camera: null,
-    lidar: { observations, capturedAtMs: receivedAtMs },
+    lidar: { observations: presentTracks ? radar.displayObservations ?? observations : observations, capturedAtMs: receivedAtMs },
+    lidarBrakingObservations: brakingObservations ?? observations,
   }, receivedAtMs, undefined, false, radarTrialSettings.stopDistanceM);
 }

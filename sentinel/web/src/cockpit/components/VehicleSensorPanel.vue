@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { StockLidarPreview, VehicleResult } from '../../../../sentinel-backend/src/vehicle/contracts';
+import { stockLidarLimits, type StockLidarPreview, type VehicleResult } from '../../../../sentinel-backend/src/vehicle/contracts';
 import UiIcon from './UiIcon.vue';
 
 const props = defineProps<{ kind: 'camera' | 'lidar'; result: VehicleResult | null; hardwareLidar?: StockLidarPreview; radarOnly?: boolean; held?: boolean }>();
@@ -10,7 +10,7 @@ const cameraPoints = computed(() => props.result?.observations?.camera?.observat
 const scan = computed(() => {
   if (!props.hardwareLidar) return props.result?.observations?.lidar?.observations ?? [];
   const scan = props.hardwareLidar.sample;
-  return scan?.observations ?? (scan?.nearest ? [scan.nearest] : []);
+  return props.hardwareLidar.displayObservations ?? scan?.observations ?? (scan?.nearest ? [scan.nearest] : []);
 });
 const count = computed(() => props.hardwareLidar ? scan.value.length : sample.value?.observations.length);
 const pixels = computed(() => isCamera.value ? props.result?.capture?.vision : null);
@@ -38,10 +38,20 @@ const ground = computed(() => {
     x: (metres: number) => 38 + 24 * (metres - xMin) / step,
     y: (metres: number) => 106 - 24 * (metres - yMin) / step };
 });
-const radarRange = computed(() => 2 ** Math.ceil(Math.log2(Math.max(1, ...scan.value.map(p => p.rangeM)))));
-const radarDots = computed(() => scan.value.map(p => {
-  const r = 45 * p.rangeM / radarRange.value, angle = p.bearingDeg * Math.PI / 180;
-  return { x: 133 + r * Math.sin(angle), y: 65 - r * Math.cos(angle) };
+const radarRange = computed(() => props.hardwareLidar
+  ? props.hardwareLidar.maxRangeM ?? stockLidarLimits.legacyMaxRangeM
+  : 2 ** Math.ceil(Math.log2(Math.max(1, ...scan.value.map(p => p.rangeM)))));
+const extendedScale = computed(() => !!props.hardwareLidar && radarRange.value > stockLidarLimits.legacyMaxRangeM);
+const radarTicks = computed(() => extendedScale.value ? [0.5, 2, 8, radarRange.value] :
+  [1, 2, 3, 4].map(tick => tick * radarRange.value / 4));
+function radarRadius(rangeM: number) {
+  return 45 * (extendedScale.value
+    ? Math.log1p(4 * rangeM) / Math.log1p(4 * radarRange.value)
+    : rangeM / radarRange.value);
+}
+const radarDots = computed(() => scan.value.map((p, i) => {
+  const r = radarRadius(p.rangeM), angle = p.bearingDeg * Math.PI / 180;
+  return { key: p.trackId ?? i, x: 133 + r * Math.sin(angle), y: 65 - r * Math.cos(angle) };
 }));
 </script>
 
@@ -52,7 +62,7 @@ const radarDots = computed(() => scan.value.map(p => {
       <span class="count">{{ countLabel }}</span>
     </header>
     <div class="plot-caption"><span><UiIcon :name="isCamera ? 'camera' : 'radar'" :size="15" />
-      {{ hardwareLidar ? '前向 ±20° · 当前扫描' : isCamera ? ($slots.camera ? '摄像画面 · 标定位置见下方' : '场地坐标 · 俯视') : '车身方位 · 俯视' }}</span>
+      {{ hardwareLidar ? '前向 ±' + stockLidarLimits.halfSectorDeg + '° · 当前扫描' : isCamera ? ($slots.camera ? '摄像画面 · 标定位置见下方' : '场地坐标 · 俯视') : '车身方位 · 俯视' }}</span>
       <span v-if="!radarOnly && (hardwareLidar ? !radarInFusion : sample && !sample.includedInFusion)" class="unused">未参与融合</span>
     </div>
     <slot v-if="$slots.camera && isCamera" name="camera" />
@@ -72,12 +82,12 @@ const radarDots = computed(() => scan.value.map(p => {
       </g>
     </svg>
     <svg v-else viewBox="0 0 268 129" class="sensor-plot" role="img" aria-label="车载雷达目标的距离与方位，车头朝上">
-      <g class="grid"><circle v-for="i in 4" :key="i" cx="133" cy="65" :r="45*i/4" /></g>
+      <g class="grid"><circle v-for="tick in radarTicks" :key="tick" cx="133" cy="65" :r="radarRadius(tick)" /></g>
       <path class="axis" d="M80 65h106M133 16v98" />
       <path class="car" d="m133 59 4 10-4-2-4 2z" />
       <g class="axis-text"><text x="133" y="13" text-anchor="middle">车头 · 0°</text><text x="191" y="69">右</text>
-        <text x="133" y="124" text-anchor="middle">外圈 {{ radarRange }} m</text></g>
-      <g v-for="(p, i) in radarDots" :key="i" :transform="'translate(' + p.x + ',' + p.y + ')'">
+        <text x="133" y="124" text-anchor="middle">{{ extendedScale ? '距离环 ' + radarTicks.join(' / ') : '外圈 ' + radarRange }} m</text></g>
+      <g v-for="p in radarDots" :key="p.key" :transform="'translate(' + p.x + ',' + p.y + ')'">
         <circle r="6.5" class="mark" /><circle r="2.7" class="dot" />
       </g>
     </svg>
@@ -86,10 +96,10 @@ const radarDots = computed(() => scan.value.map(p => {
         <div v-for="(p, i) in cameraPoints" :key="i"><b>{{ p.trackId ?? 'C' + (i + 1) }}</b><span>X {{ p.xM.toFixed(2) }} m</span><span>Y {{ p.yM.toFixed(2) }} m</span></div>
       </template>
       <template v-else>
-        <div v-for="(p, i) in scan" :key="i"><b>{{ p.trackId ?? 'L' + (i + 1) }}</b><span>距离 {{ p.rangeM.toFixed(2) }} m</span><span>方位 {{ p.bearingDeg.toFixed(1) }}°</span></div>
+        <div v-for="(p, i) in scan" :key="p.trackId ?? i"><b>{{ p.trackId ?? 'L' + (i + 1) }}</b><span>距离 {{ p.rangeM.toFixed(2) }} m</span><span>方位 {{ p.bearingDeg.toFixed(1) }}°</span></div>
       </template>
     </div>
-    <p v-else-if="hardwareLidar">{{ hardwareLidar.status === 'online' ? '本次扫描在 0.10–2.00 m 内无回波' : '等待雷达有效扫描' }}</p>
+    <p v-else-if="hardwareLidar">{{ hardwareLidar.status === 'online' ? '本次扫描在 ' + stockLidarLimits.minRangeM.toFixed(2) + '–' + radarRange.toFixed(2) + ' m 内无回波' : '等待雷达有效扫描' }}</p>
     <p v-else>{{ pixels ? '地面观测 · '+(sample ? '本帧无定位目标' : '等待标定坐标') : sample ? (held ? '上一帧未发现目标' : '本帧未发现目标') : '等待有效观测' }}</p>
   </section>
 </template>

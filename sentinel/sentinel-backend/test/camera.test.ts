@@ -7,6 +7,7 @@ import Fastify from 'fastify';
 import {CameraFrameStore, LiveCamera, registerCameraDetectionSettings, registerCameraFrames} from '../src/live/camera.js';
 import {registerVehicleRisk,saveCameraCalibration} from '../src/vehicle/service.js';
 import type {StockLidarSample,VehicleResult} from '../src/vehicle/contracts.js';
+import {StraightOdometry} from '../src/vehicle/straight-odometry.js';
 
 test('selecting a supported class filters vehicle observations and keeps monitor detection labels', async t=>{
   t.mock.method(LiveCamera.prototype as unknown as {start:(url:string)=>void},'start',()=>{});
@@ -97,6 +98,47 @@ test('live driving fuses actual radar targets and the calibrated camera only wit
   assert.ok(Math.abs((fused?.closestForwardM ?? 0)-.35)<1e-6);
   t.mock.timers.tick(251);
   assert.equal(risk(),null);
+});
+
+test('moving odometry and camera history stop for a crossing ball before any radar detection', async t=>{
+  t.mock.timers.enable({apis:['Date'],now:4800});
+  const app = Fastify(), camera = new CameraFrameStore();
+  t.after(()=>app.close());
+  const readRisk = registerVehicleRisk(app,camera,JSON.stringify({
+    width:320,height:240,cameraOffsetMs:0,alignmentWindowMs:100,
+    points:[{u:0,v:0,x:0,y:0},{u:1,v:0,x:2,y:0},{u:1,v:1,x:2,y:2},{u:0,v:1,x:0,y:2}],
+  }));
+  const wheels = (receivedAtMs:number, speed:number) => ({wheelAMps:speed,wheelBMps:speed,batteryPercent:70,receivedAtMs});
+  const odometry = new StraightOdometry({xM:.5,yM:0,headingDeg:0},wheels(4600,0));
+  odometry.update(wheels(4800,.4),true);
+  function frame(sequence:number, xM:number) {
+    const capturedAt = Date.now();
+    assert.ok(camera.accept({sequence,capturedAt,width:320,height:240,detector:'local',
+      jpeg:Buffer.from([255,216,255,217]).toString('base64'),detections:[
+        {x:xM * 160 - 10,y:.77 * 120 - 20,width:20,height:20,label:'sports ball',score:.95,track_id:'V001'},
+      ]}));
+    return {status:'online' as const,sample:{sequence,capturedTickMs:capturedAt,receivedAtMs:capturedAt,observations:[],nearest:null}};
+  }
+  assert.notEqual(readRisk(frame(1,1.22),.4,odometry.poseAt(4800))?.motion.action,'stop');
+  t.mock.timers.tick(200);
+  odometry.update(wheels(5000,.4),true);
+  const pose = odometry.poseAt(5000)!;
+  assert.ok(Math.abs(pose.yM-.12) < 1e-6);
+  const scan = frame(2,1.05);
+  const crossing = readRisk(scan,.4,pose);
+  assert.equal(crossing?.motion.reason,'camera_approach');
+  assert.equal(crossing?.motion.speedLimitMps,0);
+  assert.equal(crossing?.lidarCount,0);
+  assert.equal(crossing?.obstacles[0]?.source,'camera');
+  assert.ok(crossing!.obstacles[0]!.yM > .40);
+  t.mock.timers.tick(100);
+  odometry.update(wheels(5100,.4),true);
+  assert.notEqual(readRisk(frame(3,1.14),.4,odometry.poseAt(5100))?.motion.action,'stop');
+  t.mock.timers.tick(251);
+  assert.equal(readRisk(scan,.4,pose),null);
+  odometry.update(null,false);
+  odometry.update(wheels(Date.now(),0),false);
+  assert.equal(odometry.poseAt(Date.now()),undefined);
 });
 
 test('saving live calibration persists four ground points and updates projections', async t=>{

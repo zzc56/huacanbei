@@ -69,7 +69,7 @@ const telemetryText = {
       <template v-if="!bench">
         <button class="bench-button" :disabled="!canArmRadar || stationaryFusion" type="button" @click="emit('radarTrial', true)">启用最终测试</button>
         <p class="telemetry-status">{{ detectionMode === 'fusion' && !fusionReady
-          ? '等待实时位姿、地面标定和对齐的摄像头与雷达数据。' : '适用于已验证车端超时停车的固件。' }}</p>
+          ? '请设置行驶起点，并等待摄像头与雷达观测对齐。' : '适用于已验证车端超时停车的固件。' }}</p>
       </template>
     </section>
     <section v-if="bench?.radarTrial && detectionMode === 'radar'" class="stock-feedback" aria-label="雷达停车测距" aria-live="polite">

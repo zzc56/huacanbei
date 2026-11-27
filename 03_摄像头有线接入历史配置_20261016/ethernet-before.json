@@ -1,0 +1,50 @@
+{
+  "CapturedAt": "2026-10-16T19:10:19.8005652+08:00",
+  "Adapter": {
+    "Name": "以太网 2",
+    "InterfaceIndex": 9,
+    "InterfaceDescription": "ASIX AX88179 USB 3.0 to Gigabit Ethernet Adapter",
+    "MacAddress": "EC-1A-C3-3F-5E-CE",
+    "Status": "Up"
+  },
+  "IPInterface": {
+    "Dhcp": 1,
+    "InterfaceMetric": 35
+  },
+  "Addresses": [
+    {
+      "IPAddress": "169.254.156.50",
+      "PrefixLength": 16,
+      "PrefixOrigin": 2,
+      "SuffixOrigin": 4
+    }
+  ],
+  "Routes": [
+    {
+      "DestinationPrefix": "255.255.255.255/32",
+      "NextHop": "0.0.0.0",
+      "RouteMetric": 256
+    },
+    {
+      "DestinationPrefix": "224.0.0.0/4",
+      "NextHop": "0.0.0.0",
+      "RouteMetric": 256
+    },
+    {
+      "DestinationPrefix": "169.254.255.255/32",
+      "NextHop": "0.0.0.0",
+      "RouteMetric": 256
+    },
+    {
+      "DestinationPrefix": "169.254.156.50/32",
+      "NextHop": "0.0.0.0",
+      "RouteMetric": 256
+    },
+    {
+      "DestinationPrefix": "169.254.0.0/16",
+      "NextHop": "0.0.0.0",
+      "RouteMetric": 256
+    }
+  ],
+  "Dns": []
+}

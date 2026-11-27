@@ -5,7 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { Ajv } from 'ajv';
 import { evaluateVehicleRisk, vehicleLimits, type VehicleFrame } from './risk.js';
 import type { CameraFrameStore } from '../live/camera.js';
-import { radarTrialSettings, type StationaryFusionState, type StationaryPose, type StockLidarPreview, type StockLidarSample } from './contracts.js';
+import { radarTrialSettings, type GroundVelocity, type StationaryFusionState, type StationaryPose, type StockLidarPreview, type StockLidarSample, type VehiclePose } from './contracts.js';
 import { prepareCalibration, projectedCameraPreview, type CalibrationSettings, type LiveCalibration } from './ground-calibration.js';
 
 interface CalibrationEditor {
@@ -132,7 +132,7 @@ export function registerVehicleRisk(app: FastifyInstance, camera?: CameraFrameSt
       const cutoff = Math.max(telemetry?.sinceMs ?? now, now - vehicleLimits.maxAgeMs);
       const scans = telemetry?.scans
         .filter(scan=>scan.receivedAtMs >= cutoff && scan.receivedAtMs <= now)
-        .map(scan=>({capturedAtMs:scan.receivedAtMs, observations:scan.observations})) ?? [];
+        .map(scan=>({sample:{capturedAtMs:scan.receivedAtMs, observations:scan.observations}, braking:scan.brakingObservations})) ?? [];
       const sameResolution = calibration && capture.vision?.width === calibration.settings.width &&
         capture.vision.height === calibration.settings.height;
       const projections = sameResolution && capture.status.detector !== '未启用'
@@ -145,16 +145,17 @@ export function registerVehicleRisk(app: FastifyInstance, camera?: CameraFrameSt
       const preview = projections[0];
       const display = camera.displaySnapshot(preview?.frame ?? capture, now);
       for (const {sample} of projections) {
-        const lidar = scans.find(scan=>Math.abs(scan.capturedAtMs - sample.capturedAtMs) <= vehicleLimits.maxSkewMs);
-        if (!lidar) continue;
+        const scan = scans.find(scan=>Math.abs(scan.sample.capturedAtMs - sample.capturedAtMs) <= vehicleLimits.maxSkewMs);
+        if (!scan) continue;
+        const lidar = scan.sample;
         const pose = {xM,yM,headingDeg,speedMps:0,capturedAtMs:lidar.capturedAtMs};
-        return {...evaluateVehicleRisk({pose,camera:sample,lidar}, now), capture:display, stationaryFusion:'aligned'};
+        return {...evaluateVehicleRisk({pose,camera:sample,lidar,lidarBrakingObservations:scan.braking}, now), capture:display, stationaryFusion:'aligned'};
       }
       const stationaryFusion: StationaryFusionState = !telemetry ? 'waiting_for_pose' : !scans.length ? 'waiting_for_radar' :
         !preview ? 'waiting_for_camera' : 'waiting_for_sync';
       const result = evaluateVehicleRisk(null, now);
       result.observations.camera = preview?.sample ?? projected;
-      result.observations.lidar = scans[0] ? {...scans[0],includedInFusion:false} : null;
+      result.observations.lidar = scans[0] ? {...scans[0].sample,includedInFusion:false} : null;
       return {...result,capture:display,stationaryFusion};
     });
   }
@@ -222,20 +223,39 @@ export function registerVehicleRisk(app: FastifyInstance, camera?: CameraFrameSt
     return current(now);
   });
 
-  return (radar: StockLidarPreview, speedMps: number) => {
-    const pose = drivePose, scan = radar.sample, now = Date.now();
+  return (radar: StockLidarPreview, speedMps: number, estimatedPose?: VehiclePose) => {
+    const pose = estimatedPose ?? drivePose, scan = radar.sample, now = Date.now();
     const {maxAgeMs, maxSkewMs} = vehicleLimits;
     if (!camera || !calibration || !pose || !scan || radar.status !== 'online' ||
         now - pose.capturedAtMs > maxAgeMs || now - scan.receivedAtMs > maxAgeMs ||
         Math.abs(scan.receivedAtMs - pose.capturedAtMs) > maxSkewMs) return null;
     const lidar = {capturedAtMs:scan.receivedAtMs, observations:scan.observations};
     const cutoff = Math.max(now - maxAgeMs, lidar.capturedAtMs - maxSkewMs, pose.capturedAtMs - maxSkewMs);
-    for (const capture of camera.snapshotsSince(cutoff, now)) {
+    const captures = camera.snapshotsSince(cutoff - 400, now);
+    for (const capture of captures) {
       const vision = projectedCameraPreview(capture, calibration, now, maxAgeMs);
-      if (!vision || Math.abs(vision.capturedAtMs - lidar.capturedAtMs) > maxSkewMs ||
+      if (!vision || vision.capturedAtMs < cutoff || Math.abs(vision.capturedAtMs - lidar.capturedAtMs) > maxSkewMs ||
           Math.abs(vision.capturedAtMs - pose.capturedAtMs) > maxSkewMs) continue;
-      const result = evaluateVehicleRisk({pose:{...pose,speedMps},camera:vision,lidar}, now,
-        undefined, true, radarTrialSettings.stopDistanceM);
+      const velocities = new Map<string, GroundVelocity>();
+      for (const earlier of captures) {
+        const elapsed = vision.capturedAtMs - Date.parse(earlier.vision?.captured_utc ?? '');
+        if (!Number.isFinite(elapsed) || elapsed < 80 || elapsed > 400) continue;
+        const history = projectedCameraPreview(earlier, calibration, now, maxAgeMs + 400);
+        for (const point of vision.observations) {
+          if (!point.trackId || velocities.has(point.trackId)) continue;
+          const previous = history?.observations.find(candidate => candidate.trackId === point.trackId);
+          if (!previous) continue;
+          const xMps = (point.xM - previous.xM) * 1000 / elapsed;
+          const yMps = (point.yM - previous.yM) * 1000 / elapsed;
+          if (Math.hypot(xMps, yMps) <= 4) velocities.set(point.trackId, {xMps, yMps});
+        }
+      }
+      for (const point of vision.observations) {
+        const velocity = point.trackId && velocities.get(point.trackId);
+        if (velocity) point.velocity = velocity;
+      }
+      const result = evaluateVehicleRisk({pose:{...pose,speedMps},camera:vision,lidar,lidarBrakingObservations:scan.brakingObservations}, now,
+        undefined, true, radarTrialSettings.stopDistanceM, true);
       if (result.observations.camera?.includedInFusion) return { ...result, capture:camera.displaySnapshot(capture, now) };
     }
     return null;

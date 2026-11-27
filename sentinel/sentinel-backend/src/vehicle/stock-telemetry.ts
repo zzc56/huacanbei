@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import type { StockTelemetry } from './contracts.js';
-import { radarTrialSettings } from './contracts.js';
+import { radarTrialSettings, wheelFeedbackMaxAgeMs } from './contracts.js';
 import { StockLidarReader } from './stock-lidar.js';
 
 // The app selects from a fixed set of Bluetooth commands. Movement queued in
@@ -90,7 +90,7 @@ export class StockTelemetryReader {
 
   private receive(chunk: string) {
     this.pending += chunk;
-    const frames = this.pending.matchAll(/\{(A(\d{1,3}):(\d{1,3}):(-?\d{1,3}):\2:\3|B(\d{1,4}):\d{1,3}:\d{1,3}|RM?[0-9:-]{1,89})\}\$/g);
+    const frames = this.pending.matchAll(/\{(?:A(\d{1,3}):(\d{1,3}):(-?\d{1,3}):\1:\2|B(\d{1,4}):(\d{1,3}):(\d{1,3})|R[MN]?[0-9:-]{1,95})\}\$/g);
     let consumed = 0;
     for (const frame of frames) {
       consumed = frame.index + frame[0].length;
@@ -98,28 +98,27 @@ export class StockTelemetryReader {
         this.lidar.receive(frame[0], performance.now(), Date.now());
         continue;
       }
-      if (frame[5] !== undefined) {
-        this.settingValue = { mmps: Number(frame[5]), readAt: performance.now() };
-        continue;
-      }
-      const a = Number(frame[2]), b = Number(frame[3]), battery = Number(frame[4]);
+      // A and B alternate. In the stock protocol both carry measured wheel speeds.
+      const a = Number(frame[1] ?? frame[5]), b = Number(frame[2] ?? frame[6]);
       if (a > 255 || b > 255) continue;
       const now = performance.now(), receivedAtMs = Date.now();
+      if (frame[4] !== undefined) this.settingValue = { mmps: Number(frame[4]), readAt: now };
+      const battery = frame[3] !== undefined ? Number(frame[3]) : this.latest?.batteryPercent ?? null;
       if (a !== 0 || b !== 0) this.stationary = null;
       else if (!this.stationary || !this.freshForMotion(now))
         this.stationary = {id:randomUUID(), sinceMs:receivedAtMs};
       this.latest = { wheelAMps: a / 100, wheelBMps: b / 100,
-        batteryPercent: battery >= 0 && battery <= 100 ? battery : null, receivedAtMs };
+        batteryPercent: battery !== null && battery >= 0 && battery <= 100 ? battery : null, receivedAtMs };
       this.lastFrameAt = now;
       this.status = 'online';
     }
-    this.pending = this.pending.slice(Math.max(consumed, this.pending.length - 96));
+    this.pending = this.pending.slice(Math.max(consumed, this.pending.length - 100));
   }
 
   setting() { return this.settingValue; }
 
   freshForMotion(now: number) {
-    return this.status === 'online' && this.latest !== null && now - this.lastFrameAt <= 350;
+    return this.status === 'online' && this.latest !== null && now - this.lastFrameAt <= wheelFeedbackMaxAgeMs;
   }
 
   wheelFeedbackForMotion(now: number) { return this.freshForMotion(now) ? this.latest : null; }

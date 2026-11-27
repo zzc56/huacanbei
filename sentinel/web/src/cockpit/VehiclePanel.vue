@@ -34,6 +34,8 @@ const drive = useVehicleDrive(computed(() => route.name === 'vehicle'), endpoint
 function openCalibration() {
   if (drive.expanded.value) drive.enlarge();
   else drive.stop();
+  drive.setRadarTrial(false);
+  drive.setDriveOrigin(null);
   calibrating.value = true;
 }
 const detectionModes = [{id:'radar', name:'只有雷达检测'}, {id:'fusion', name:'摄像头和雷达融合检测'}] as const;
@@ -44,6 +46,7 @@ function openDetection(mode: typeof detectionModes[number]['id']) {
 }
 const bench = computed(() => drive.snapshot.value?.bench);
 const radarTrial = computed(() => bench.value?.radarTrial);
+const odometry = computed(() => drive.snapshot.value?.odometry);
 const cameraInFusion = computed(() => {
   const sample = frame.value?.observations.camera;
   const image = displayedCamera.value?.vision;
@@ -52,15 +55,24 @@ const cameraInFusion = computed(() => {
 });
 const hardwareLidar = computed(() => drive.snapshot.value?.telemetry?.lidar);
 const stationaryId = computed(() => drive.snapshot.value?.telemetry?.stationaryId);
-function confirmStationaryPose() {
+function confirmedPose(): StationaryPose | undefined {
   const {xM,yM,headingDeg} = poseInput.value;
   const id = stationaryId.value;
-  if (!id || xM === '' || yM === '' || headingDeg === '') return;
-  drive.stop();
-  stationaryPose.value = {xM,yM,headingDeg,stationaryId:id};
+  if (bench.value || !id || xM === '' || yM === '' || headingDeg === '' ||
+      !Number.isFinite(xM) || !Number.isFinite(yM) || !Number.isFinite(headingDeg) ||
+      Math.abs(xM) > 1000 || Math.abs(yM) > 1000 || Math.abs(headingDeg) > 360) return;
+  return {xM,yM,headingDeg,stationaryId:id};
 }
-function finishStationaryFusion() {
-  drive.stop();
+function confirmStationaryPose() {
+  const origin = confirmedPose();
+  if (!origin) return;
+  drive.setDriveOrigin(null);
+  stationaryPose.value = origin;
+}
+function startDriveOdometry() {
+  const origin = confirmedPose();
+  if (!origin) return;
+  drive.setDriveOrigin(origin);
   stationaryPose.value = null;
 }
 const overviewRoute = computed(() => route.query.from === 'history'
@@ -93,6 +105,7 @@ const displayedCamera = computed(() => {
   if (radarOnly.value) return undefined;
   const incoming = frame.value?.capture;
   const previous = lastCameraCapture.value;
+  if (liveFusion.value && !stationaryPose.value && incoming?.vision) return incoming;
   if (!incoming?.vision) return previous ?? incoming;
   if (previous?.vision && incoming.vision.captured_utc < previous.vision.captured_utc) return previous;
   return incoming;
@@ -119,7 +132,8 @@ const fusionEmptyText = computed(() => {
   if (radarOnly.value) return '等待车载雷达有效扫描';
   const state = frame.value?.stationaryFusion;
   if (stationaryPose.value) return state ? waitingForStationaryFusion[state] : '正在读取实时融合数据';
-  return '等待实时位姿及对齐观测 · 也可确认静止位姿查看融合';
+  if (odometry.value?.status === 'tracking') return '已设置行驶起点，等待有效且时间对齐的摄像头与雷达观测';
+  return '小车停稳后，请设置行驶起点';
 });
 const store = useSceneStore();
 const previous = {frame:store.frame, selectedId:store.selectedId, playing:store.playing, connection:store.connection, videoSource:store.videoSource};
@@ -218,6 +232,7 @@ async function load() {
 watch(radarOnly, enabled => {
   if (drive.expanded.value) drive.enlarge();
   drive.setRadarTrial(false);
+  drive.setDriveOrigin(null);
   calibrating.value = false;
   stationaryPose.value = null;
   if (enabled) {
@@ -300,14 +315,16 @@ onUnmounted(() => {
               <button :aria-pressed="showContours" @click="showContours = !showContours">等值线</button>
             </div>
           </div>
-          <form v-if="!radarOnly" class="stationary-fusion" aria-label="静止融合位姿" @submit.prevent="confirmStationaryPose">
-            <strong>静止融合</strong>
-            <label>X（米） <input v-model="poseInput.xM" type="number" step="any" min="-1000" max="1000" required :disabled="!!stationaryPose" /></label>
-            <label>Y（米） <input v-model="poseInput.yM" type="number" step="any" min="-1000" max="1000" required :disabled="!!stationaryPose" /></label>
-            <label>朝向（°） <input v-model="poseInput.headingDeg" type="number" step="any" min="-360" max="360" required :disabled="!!stationaryPose" /></label>
-            <button v-if="stationaryPose" type="button" @click="finishStationaryFusion">完成并恢复驾驶</button>
-            <button v-else type="submit" :disabled="!stationaryId">确认位置并开始</button>
-            <p v-if="!stationaryPose && !stationaryId">连接串口，等待两路轮速归零。</p>
+          <form v-if="!radarOnly" class="stationary-fusion" aria-label="小车起点与定位" @submit.prevent="startDriveOdometry">
+            <strong>小车起点与定位</strong>
+            <label>X（米） <input v-model="poseInput.xM" type="number" step="any" min="-1000" max="1000" required :disabled="!!stationaryPose || !!bench" /></label>
+            <label>Y（米） <input v-model="poseInput.yM" type="number" step="any" min="-1000" max="1000" required :disabled="!!stationaryPose || !!bench" /></label>
+            <label>朝向（°） <input v-model="poseInput.headingDeg" type="number" step="any" min="-360" max="360" required :disabled="!!stationaryPose || !!bench" /></label>
+            <button type="submit" :disabled="!stationaryId || !!bench">{{ stationaryPose ? '用此位置开始行驶定位' : '设为行驶起点' }}</button>
+            <button v-if="stationaryPose" type="button" @click="stationaryPose = null">返回编辑</button>
+            <button v-else type="button" :disabled="!stationaryId || !!bench" @click="confirmStationaryPose">静止查看</button>
+            <p v-if="odometry?.status === 'tracking'">轮速定位 · X {{ odometry.pose.xM.toFixed(2) }} m · Y {{ odometry.pose.yM.toFixed(2) }} m · 朝向 {{ odometry.pose.headingDeg.toFixed(1) }}°</p>
+            <p v-else-if="odometry?.status === 'reset_required'">定位中断。小车停稳后，请重新填写当前位置和朝向。</p>
             <p v-else>以雷达中心为位置，沿用地面标定原点。车头朝 +Y 为 0°，朝 +X 为 90°。</p>
           </form>
           <VehicleRiskMap :result="displayedRisk" :corridor="showCorridor" :contours="showContours"

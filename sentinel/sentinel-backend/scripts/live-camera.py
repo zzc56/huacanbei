@@ -174,7 +174,8 @@ def detect():
                             try:
                                 dedicated_balls = basketball_model.detect(frame)
                                 measured = [rect for rect,_,label,_ in objects if label == "sports ball"]
-                                objects.extend((rect,score,"sports ball",True) for rect,score in dedicated_balls
+                                # Only confident detections measured on this frame may feed braking.
+                                objects.extend((rect,score,"sports ball",score < .50) for rect,score in dedicated_balls
                                                if not any(same_ball(rect, box) for box in measured))
                             except Exception as error:
                                 print(f"Basketball model stopped: {error}", file=sys.stderr)

@@ -25,7 +25,7 @@ export function buildApp(mode = process.env['SOURCE_MODE'] ?? 'live', liveOption
   if (mode === 'live' || mode === 'vehicle') {
     const camera = new LiveCamera(liveOptions.camera);
     const readStationaryRadar = registerVehicleDrive(app, origins, process.env['SENTINEL_VEHICLE_PORT'] ?? 'COM11',
-      (radar, speedMps) => readFusionRisk(radar, speedMps));
+      (radar, speedMps, pose) => readFusionRisk(radar, speedMps, pose));
     const devicesFile = liveOptions.devicesFile ?? process.env['SENTINEL_DEVICES_FILE'] ?? process.env['SENTINEL_DEVICE_CONFIG_PATH'];
     const readFusionRisk = registerVehicleRisk(app, camera, undefined, { readStationaryRadar, editor: {
       origins,

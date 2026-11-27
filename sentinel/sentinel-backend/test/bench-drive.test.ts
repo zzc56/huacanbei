@@ -69,12 +69,15 @@ test('fusion can stop for a camera-only obstacle and fails closed when alignment
     return evaluateVehicleRisk({
       pose:{xM:0,yM:0,headingDeg:0,speedMps,capturedAtMs},
       lidar:{observations:radar.sample.observations,capturedAtMs},
-      camera:{observations:cameraBlocks ? [{xM:0,yM:.35}] : [],capturedAtMs},
-    }, capturedAtMs, undefined, true, .40);
+      camera:{observations:cameraBlocks ? [{xM:.55,yM:.65,velocity:{xMps:-.85,yMps:0}}] : [],capturedAtMs},
+    }, capturedAtMs, undefined, true, .40, true);
   });
   confirm(); drive.snapshot(120); drive.command('forward', 130);
   cameraBlocks = true;
-  assert.equal(drive.snapshot(140).radarTrial.state, 'obstacle');
+  const stopped = drive.snapshot(140);
+  assert.equal(stopped.radarTrial.state, 'obstacle');
+  assert.match(stopped.message, /监控预测.*提前停车/);
+  drive.command('heartbeat',145);
   assert.deepEqual(commands, ['arm-radar', 'forward', 'stop']);
   drive.command('stop', 150);
   cameraBlocks = false;
